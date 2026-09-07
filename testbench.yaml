@@ -1,0 +1,7 @@
+# Read by Larastan when it boots a Testbench application for analysis, so the
+# package provider registers the fin-codex:: view namespace and the view names
+# handed to Filament's ViewColumn type-check as view-string. The Pest harness
+# lists its providers itself in tests/TestCase.php and ignores this file.
+# Same shape as packages/lin-codex/testbench.yaml.
+providers:
+  - FinityLabs\FinCodex\FinCodexServiceProvider

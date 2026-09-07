@@ -1,0 +1,46 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  tests:
+    name: PHP ${{ matrix.php }} / Filament ${{ matrix.filament }} / Laravel ${{ matrix.laravel }}
+    runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.experimental == true }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Filament ^4 rows run Livewire 3, Filament ^5 rows run Livewire 4. Never PHP 8.2 with Laravel 13.
+          - { php: '8.2', filament: '^4.0', laravel: '^12.0', testbench: '^10.0' }
+          - { php: '8.3', filament: '^4.0', laravel: '^12.0', testbench: '^10.0' }
+          - { php: '8.3', filament: '^5.0', laravel: '^12.0', testbench: '^10.0' }
+          - { php: '8.4', filament: '^5.0', laravel: '^12.0', testbench: '^10.0' }
+          - { php: '8.3', filament: '^5.0', laravel: '^13.0', testbench: '^11.0' }
+          - { php: '8.4', filament: '^5.0', laravel: '^13.0', testbench: '^11.0' }
+          - { php: '8.3', filament: '^4.0', laravel: '^13.0', testbench: '^11.0' }
+          # Laravel 11 resolves the 11.x branch: Composer's security audit blocks every tagged 11.x release.
+          - { php: '8.2', filament: '^4.0', laravel: '^11.0', testbench: '^9.0', experimental: true }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP ${{ matrix.php }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+
+      - name: Install dependencies
+        run: |
+          composer update --no-interaction --no-progress --prefer-dist \
+            --with "filament/filament:${{ matrix.filament }}" \
+            --with "illuminate/contracts:${{ matrix.laravel }}" \
+            --with "orchestra/testbench:${{ matrix.testbench }}"
+          composer show | grep -E '^(filament/filament|livewire/livewire|laravel/framework) '
+
+      - name: Run tests
+        run: vendor/bin/pest

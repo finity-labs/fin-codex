@@ -1,0 +1,18 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+parameters:
+    paths:
+        - src
+    level: 5
+    ignoreErrors:
+        # WithHelp is meant for host resources and pages; nothing under src/ uses it,
+        # so PHPStan has no using class to analyse it against.
+        -
+            identifier: trait.unused
+            path: src/Help/WithHelp.php
+        # Shield is an optional dependency (composer "suggest"); the trait
+        # references its classes behind class_exists(). Drop this line if
+        # bezhansalleh/filament-shield ever enters require-dev — an ignore
+        # that matches nothing fails the run just as loudly.
+        - '#BezhanSalleh\\FilamentShield\\#'

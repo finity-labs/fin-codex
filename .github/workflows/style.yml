@@ -1,0 +1,50 @@
+name: Code Style
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  pint:
+    name: Pint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Run Pint
+        run: vendor/bin/pint --test
+
+  phpstan:
+    name: PHPStan / Filament ${{ matrix.filament }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        filament: ['^4.0', '^5.0']
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+
+      - name: Install dependencies
+        run: |
+          composer update --no-interaction --no-progress --prefer-dist --with "filament/filament:${{ matrix.filament }}"
+          composer show | grep -E '^(filament/filament|livewire/livewire|laravel/framework) '
+
+      - name: Run PHPStan
+        run: vendor/bin/phpstan analyse --no-progress
