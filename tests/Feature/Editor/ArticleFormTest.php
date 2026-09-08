@@ -340,6 +340,47 @@ it('rejects a duplicate slug and accepts the record\'s own slug on edit', functi
     expect(Article::query()->count())->toBe(1);
 });
 
+it('refuses a section rename that would move a descendant onto an existing slug', function (): void {
+    $user = finCodexFormUser();
+    $writer = app(ArticleWriter::class);
+    $section = $writer->create(finCodexFormState(['slug' => 'a']), $user->id);
+    $writer->create(finCodexFormState(['slug' => 'a/x']), $user->id);
+    $writer->create(finCodexFormState(['slug' => 'b/x']), $user->id);
+
+    $this->usesPanel('admin', $user);
+
+    Livewire::test(EditArticle::class, ['record' => $section->getRouteKey()])
+        ->fillForm(['slug' => 'b'])
+        ->call('save')
+        ->assertHasFormErrors(['slug']);
+
+    expect(Article::query()->orderBy('slug')->pluck('slug')->all())->toBe(['a', 'a/x', 'b/x']);
+
+    Livewire::test(EditArticle::class, ['record' => $section->getRouteKey()])
+        ->fillForm(['slug' => 'c'])
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    expect(Article::query()->orderBy('slug')->pluck('slug')->all())->toBe(['b/x', 'c', 'c/x']);
+});
+
+it('refuses a non-default tab with only a title or only a body', function (): void {
+    finCodexFormUseLanguages(['en', 'de']);
+    $this->usesPanel('admin', finCodexFormUser());
+
+    Livewire::test(CreateArticle::class)
+        ->fillForm(finCodexFormState(['translations' => ['de' => ['title' => 'Benutzer']]]))
+        ->call('create')
+        ->assertHasFormErrors(['translations.de.body']);
+
+    Livewire::test(CreateArticle::class)
+        ->fillForm(finCodexFormState(['translations' => ['de' => ['body' => 'So funktionieren Benutzer.']]]))
+        ->call('create')
+        ->assertHasFormErrors(['translations.de.title']);
+
+    expect(Article::query()->count())->toBe(0);
+});
+
 it('requires an existing parent for nested paths, database or file', function (): void {
     $user = finCodexFormUser();
     $this->usesPanel('admin', $user);

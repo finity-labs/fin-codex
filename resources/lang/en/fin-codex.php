@@ -103,6 +103,7 @@ return [
             'label' => 'Convert to Markdown',
             'heading' => 'Convert this article to Markdown?',
             'description' => 'Every translation is converted and the HTML is kept as a revision.',
+            'description_revisions_off' => 'Every translation is converted. The HTML is kept as a revision, but revisions are switched off, so it stays out of sight until you enable them in Help settings.',
             'done' => 'Converted to Markdown',
         ],
         'html_readonly' => 'HTML articles are read-only; convert to Markdown to edit the body.',
@@ -123,6 +124,7 @@ return [
         'validation' => [
             'slug_format' => 'The slug must be kebab-case segments separated by slashes.',
             'parent_missing' => 'No article exists at :parent.',
+            'descendant_conflict' => 'Renaming would give :descendant the slug :slug, which already exists.',
         ],
     ],
     'revisions' => [

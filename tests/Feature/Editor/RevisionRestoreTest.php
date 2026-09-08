@@ -1,6 +1,7 @@
 <?php
 
 use Filament\Actions\Action;
+use FinityLabs\FinCodex\Resources\ArticleResource;
 use FinityLabs\FinCodex\Resources\ArticleResource\Pages\EditArticle;
 use FinityLabs\FinCodex\Resources\ArticleResource\RelationManagers\RevisionsRelationManager;
 use FinityLabs\FinCodex\Tests\Fixtures\User;
@@ -286,6 +287,19 @@ it('puts the title and the body of a revision back', function (): void {
 
     expect($translation->title)->toBe('v1')
         ->and($translation->body)->toBe('v1 body');
+});
+
+it('reloads the edit page after a restore, so the form holds the restored text', function (): void {
+    enableRevisions(true);
+    $user = finCodexRestoreUser();
+    $this->usesPanel('admin', $user);
+
+    $article = finCodexRestoreArticle('users', 'v1');
+    finCodexRestoreEdit($article, 'v2', 'v2 body');
+
+    finCodexRestoreManager($article)
+        ->callTableAction('restore', finCodexRestoreLatest($article))
+        ->assertRedirect(ArticleResource::getUrl('edit', ['record' => $article]));
 });
 
 it('snapshots the current text first, with the Restore reason and the panel user', function (): void {

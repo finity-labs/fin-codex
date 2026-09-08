@@ -6,11 +6,13 @@ namespace FinityLabs\FinCodex;
 
 use Closure;
 use Filament\Contracts\Plugin;
+use Filament\Facades\Filament;
 use Filament\GlobalSearch\Providers\Contracts\GlobalSearchProvider;
 use Filament\Panel;
 use Filament\Support\Concerns\EvaluatesClosures;
 use Filament\Support\View\ViewManager;
 use Filament\View\PanelsRenderHook;
+use FinityLabs\FinCodex\Auth\ArticlePolicyRegistration;
 use FinityLabs\FinCodex\Enums\NavigationGroup;
 use FinityLabs\FinCodex\Pages\HelpCoverage;
 use FinityLabs\FinCodex\Pages\HelpSettings;
@@ -18,6 +20,7 @@ use FinityLabs\FinCodex\Panel\HelpMount;
 use FinityLabs\FinCodex\Resources\ArticleResource;
 use FinityLabs\FinCodex\Search\HelpSearchProvider;
 use Illuminate\Support\HtmlString;
+use Throwable;
 use UnitEnum;
 
 /**
@@ -132,8 +135,21 @@ class FinCodexPlugin implements Plugin
      */
     public function boot(Panel $panel): void
     {
+        $this->bootPolicy();
         $this->bootSpaExceptions($panel);
         $this->bootGlobalSearch($panel);
+    }
+
+    /**
+     * This panel's article policy. The provider registered one at boot with
+     * the default panel's namespace; a panel that names its own re-registers
+     * here, once per request, before any page of it renders. The Gate map is
+     * a plain array keyed by model, so repeating the registration on every
+     * request costs nothing and leaks nothing.
+     */
+    private function bootPolicy(): void
+    {
+        ArticlePolicyRegistration::register($this->getPolicyNamespace());
     }
 
     /**
@@ -329,6 +345,35 @@ class FinCodexPlugin implements Plugin
     public function getArticleResource(): ?string
     {
         return $this->articleResource;
+    }
+
+    /**
+     * The article resource class in force for the current (or default)
+     * panel: the articleResource() override when that panel has one and it
+     * extends the built-in resource, Resources\ArticleResource otherwise. With
+     * no panel current the default panel answers, and the built-in resource
+     * stands in when there is no default panel or it carries no plugin. The
+     * three resource pages answer
+     * getResource() with this, which is what lets a host subclass change the
+     * form, the table, the query and the relation managers, not only the
+     * navigation statics.
+     *
+     * With a panel id, the answer is that panel's, whichever panel is current:
+     * the coverage report scans every panel from one request and must file a
+     * staff page under staff's resource, not admin's.
+     *
+     * @return class-string<ArticleResource>
+     */
+    public static function articleResourceClass(?string $panelId = null): string
+    {
+        try {
+            $plugin = $panelId === null ? static::get() : Filament::getPanel($panelId)->getPlugin('fin-codex');
+            $override = $plugin instanceof self ? $plugin->getArticleResource() : null;
+        } catch (Throwable) {
+            return ArticleResource::class;
+        }
+
+        return $override !== null && is_a($override, ArticleResource::class, true) ? $override : ArticleResource::class;
     }
 
     /** @param  class-string  $page */

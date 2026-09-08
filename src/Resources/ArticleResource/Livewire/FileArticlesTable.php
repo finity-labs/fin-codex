@@ -220,9 +220,7 @@ final class FileArticlesTable extends Component implements HasActions, HasSchema
      */
     private function articleResource(): string
     {
-        $resource = FinCodexPlugin::get()->getArticleResource();
-
-        return is_a($resource, ArticleResource::class, true) ? $resource : ArticleResource::class;
+        return FinCodexPlugin::articleResourceClass();
     }
 
     /** The panel user's id, or null for a panel without an authenticated user. */

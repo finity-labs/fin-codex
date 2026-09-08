@@ -103,6 +103,7 @@ return [
             'label' => 'Átalakítás Markdownra',
             'heading' => 'Átalakítja ezt a cikket Markdownra?',
             'description' => 'Minden fordítás átalakul; a HTML revízióként megmarad.',
+            'description_revisions_off' => 'Minden fordítás átalakul. A HTML revízióként megmarad, de a revíziók ki vannak kapcsolva, így addig nem látható, amíg a Súgó beállításokban be nem kapcsolja őket.',
             'done' => 'Átalakítva Markdownra',
         ],
         'html_readonly' => 'A HTML-cikkek csak olvashatók; a törzs szerkesztéséhez alakítsa át Markdownra.',
@@ -123,6 +124,7 @@ return [
         'validation' => [
             'slug_format' => 'A slug kötőjeles szegmensekből álljon, perjellel elválasztva.',
             'parent_missing' => 'Nem létezik cikk a(z) :parent helyen.',
+            'descendant_conflict' => 'Az átnevezéssel :descendant a(z) :slug slugot kapná, amely már létezik.',
         ],
     ],
     'revisions' => [

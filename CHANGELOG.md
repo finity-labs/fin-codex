@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-08
+
+### Fixed
+
+- `policyNamespace()` only took effect on the default panel: the policy was registered once at provider boot, from whichever panel was the default. Each panel now registers its own namespace when it boots for a request; provider boot keeps the default panel's (or `App\Policies`) for console commands, queues and routes outside any panel.
+- A plain panel page hydrated the whole knowledge base five times — the drawer, the coverage badge (twice, through the core's route report), the warnings badge and the declared-slug check each read the content source. The decorated source now reads the core once per request and drops that reading when an article, a translation or a context is written.
+- Converting an HTML article to Markdown kept no revision of the HTML while revisions were switched off, which is a fresh install's default, although the confirmation said it would. The HTML is now snapshotted whatever the switch says, and the confirmation says when revisions are off and the Revisions tab is therefore hidden.
+- Emptying a non-default language tab deleted the translation without a snapshot even with revisions on. The writer now snapshots it first while revisions are on, and a tab with only a title or only a body is refused — by the form with a validation message, and by `ArticleWriter` with an exception — instead of being deleted.
+- Restoring a revision left the edit form holding the text from before the restore, so the next Save put it straight back. The restore now runs in one transaction and the edit page reloads afterwards.
+- `articleResource()` reached only the navigation statics: the built-in pages named the base resource, so a subclass's form, table, query or relation managers never applied. The pages now resolve the resource through the serving panel's plugin, and the coverage report files each panel's pages under that panel's resource.
+- Renaming a section whose descendants would land on slugs already in use surfaced a raw database error after a rollback. It is now a validation error on the slug field.
+
+### Added
+
+- Lang keys `editor.convert.description_revisions_off` and `editor.validation.descendant_conflict` in en, de and hu.
+- `FinCodexPlugin::articleResourceClass(?string $panelId)`, the resource class in force for a panel.
+- `Auth\ArticlePolicyRegistration`, the one place that registers the article policy for a namespace.
+
+
 ## [0.1.0] - 2026-09-07
 
 First release. fin-codex is the Filament panel layer over [lin-codex](https://github.com/finity-labs/lin-codex): the help drawer, the article editor and the surfaces around them. Content, search, visibility and the JSON API stay in the core.

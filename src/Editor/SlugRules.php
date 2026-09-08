@@ -6,7 +6,9 @@ namespace FinityLabs\FinCodex\Editor;
 
 use Closure;
 use FinityLabs\LinCodex\Contracts\ContentSource;
+use FinityLabs\LinCodex\Models\Article;
 use FinityLabs\LinCodex\Sources\SlugPath;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 
 /**
@@ -49,7 +51,49 @@ final class SlugRules
                     ]));
                 }
             },
+            // On edit, a section rename rewrites every descendant's slug
+            // (ArticleWriter::renameDescendants), and each of those has to be
+            // free too: the field's own unique rule only checks the parent.
+            static fn (?Model $record): Closure => static function (string $attribute, mixed $value, Closure $fail) use ($record): void {
+                if (! is_string($value) || ! $record instanceof Article || $record->slug === $value) {
+                    return;
+                }
+
+                $conflicts = self::descendantConflicts($record->slug, $value);
+
+                if ($conflicts !== []) {
+                    $fail((string) __('fin-codex::fin-codex.editor.validation.descendant_conflict', [
+                        'descendant' => $record->slug.substr($conflicts[0], strlen($value)),
+                        'slug' => $conflicts[0],
+                    ]));
+                }
+            },
         ];
+    }
+
+    /**
+     * The slugs the descendants of $oldSlug would take under $newSlug that
+     * are already taken by another article, in slug order.
+     *
+     * @return list<string>
+     */
+    public static function descendantConflicts(string $oldSlug, string $newSlug): array
+    {
+        $renamed = Article::query()
+            ->where('slug', 'like', $oldSlug.'/%')
+            ->pluck('slug')
+            ->map(static fn (string $slug): string => $newSlug.substr($slug, strlen($oldSlug)))
+            ->all();
+
+        if ($renamed === []) {
+            return [];
+        }
+
+        return Article::query()
+            ->whereIn('slug', $renamed)
+            ->orderBy('slug')
+            ->pluck('slug')
+            ->all();
     }
 
     /** True for a root slug, or when some source knows the parent path. */

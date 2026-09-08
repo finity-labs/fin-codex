@@ -8,10 +8,13 @@ use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Support\Icons\Heroicon;
 use FinityLabs\FinCodex\Auth\ArticleAbility;
+use FinityLabs\FinCodex\FinCodexPlugin;
 use FinityLabs\FinCodex\Resources\ArticleResource\RelationManagers\RevisionsRelationManager;
 use FinityLabs\LinCodex\Models\Article;
 use FinityLabs\LinCodex\Models\ArticleRevision;
+use FinityLabs\LinCodex\Models\ArticleTranslation;
 use FinityLabs\LinCodex\Revisions\RevisionManager;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Putting one revision back, with the sentence that makes pressing it safe.
@@ -33,6 +36,14 @@ use FinityLabs\LinCodex\Revisions\RevisionManager;
  * The author is the panel user, resolved by the manager — a relation manager
  * is its own Livewire component and has no handle on the page that renders
  * it, so it cannot ask EditArticle.
+ *
+ * The core's restore() is four writes (the snapshot, its prune, the
+ * translation, and the article when the format differs) with no transaction
+ * of its own, so it runs inside one here. The page is then redirected to
+ * itself, as the convert action does: the edit form above the manager still
+ * holds the text from before the restore, and a Save from there would put it
+ * straight back. A redirect rebuilds the form from the restored record and
+ * the notification survives it through the session.
  *
  * The ability is `restore`, and here that word means putting one revision back,
  * NOT undeleting a soft-deleted record: Article has no soft deletes. A host
@@ -79,14 +90,17 @@ final class RestoreRevisionAction
                 // core reads $revision->article on its first line, and this
                 // costs no query and cannot trip a lazy-loading violation if
                 // the record ever arrives from a multi-row collection.
-                $record->setRelation('article', $livewire->getOwnerRecord());
+                $owner = $livewire->getOwnerRecord();
+                $record->setRelation('article', $owner);
 
-                app(RevisionManager::class)->restore($record, $livewire->userId());
+                DB::transaction(static fn (): ArticleTranslation => app(RevisionManager::class)->restore($record, $livewire->userId()));
 
                 Notification::make()
                     ->success()
                     ->title(__('fin-codex::fin-codex.revisions.restore.done'))
                     ->send();
+
+                $livewire->redirect(FinCodexPlugin::articleResourceClass()::getUrl('edit', ['record' => $owner]));
             });
     }
 }

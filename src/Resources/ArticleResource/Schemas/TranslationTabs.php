@@ -171,9 +171,13 @@ final class TranslationTabs
     {
         $isDefault = $code === $default;
 
+        // A non-default tab is optional as a whole, never by half: the writer
+        // deletes a tab emptied of both and refuses one emptied of either,
+        // so the form says which field is missing before the writer has to.
         $title = TextInput::make("translations.{$code}.title")
             ->label(__('fin-codex::fin-codex.editor.form.title'))
             ->required($isDefault)
+            ->requiredWith($isDefault ? [] : "translations.{$code}.body")
             ->maxLength(255)
             ->live(onBlur: true);
 
@@ -188,7 +192,7 @@ final class TranslationTabs
             Textarea::make("translations.{$code}.excerpt")
                 ->label(__('fin-codex::fin-codex.editor.form.excerpt'))
                 ->rows(3),
-            $isHtml ? self::htmlBody($code) : self::body($code)->required($isDefault),
+            $isHtml ? self::htmlBody($code) : self::body($code)->required($isDefault)->requiredWith($isDefault ? [] : "translations.{$code}.title"),
             self::copyFromDefault($code, $default),
         ];
     }

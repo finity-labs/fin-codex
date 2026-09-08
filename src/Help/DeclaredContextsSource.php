@@ -13,6 +13,8 @@ use FinityLabs\LinCodex\Data\TreeNode;
 use FinityLabs\LinCodex\Enums\ContextType;
 use FinityLabs\LinCodex\Enums\SourceWarningKind;
 use FinityLabs\LinCodex\Sources\ArticleSet;
+use Illuminate\Contracts\Container\Container;
+use Illuminate\Http\Request;
 
 /**
  * Folds code-declared help into lin-codex as ordinary contexts. Wrapped
@@ -28,9 +30,17 @@ use FinityLabs\LinCodex\Sources\ArticleSet;
  *
  * The decorator never filters, reorders or looks at the viewer: the core's
  * gate decides who may read an article, and ContextIndex orders and
- * de-duplicates the merged contexts. all() is rebuilt on every call because
- * database articles change between requests; the rebuild touches only the
- * declared slugs, so it costs O(declarations), not O(articles).
+ * de-duplicates the merged contexts.
+ *
+ * The inner source's all() and warnings() are read once per request and
+ * kept until the request changes or an article, translation or context row
+ * is written (FinCodexServiceProvider forgets the memo from the model
+ * events). The core's own sources memoise nothing, and a panel page asks the
+ * source from five places — the drawer, the coverage badge (twice, through
+ * RouteCoverage), the warnings badge and the declared-slug check — so without
+ * this every page render would hydrate the whole knowledge base five times.
+ * Keyed on the request instance rather than a flag because this is a
+ * singleton: Octane flushes it between requests, Testbench does not.
  *
  * META_KEY exists for two later consumers. Phase 5's editor lists the
  * synthetic contexts read-only as "declared in code", and any exporter that
@@ -43,10 +53,29 @@ final class DeclaredContextsSource implements ContentSource
 {
     public const META_KEY = 'fin-codex-declared';
 
+    private ?Request $memoRequest = null;
+
+    /** @var array<string, ArticleData>|null */
+    private ?array $innerAll = null;
+
+    /** @var list<SourceWarning>|null */
+    private ?array $innerWarnings = null;
+
     public function __construct(
         private readonly ContentSource $inner,
         private readonly DeclaredContexts $declared,
+        private readonly Container $app,
     ) {}
+
+    /**
+     * Drop the memo: the next read goes back to the inner source. Called from
+     * the model events and by tests that change the docs tree mid-request.
+     */
+    public function forget(): void
+    {
+        $this->innerAll = null;
+        $this->innerWarnings = null;
+    }
 
     public function inner(): ContentSource
     {
@@ -58,7 +87,7 @@ final class DeclaredContextsSource implements ContentSource
      */
     public function all(): array
     {
-        $all = $this->inner->all();
+        $all = $this->innerAll();
 
         foreach ($this->declared->contextsBySlug() as $slug => $contexts) {
             if (isset($all[$slug])) {
@@ -109,8 +138,8 @@ final class DeclaredContextsSource implements ContentSource
      */
     public function warnings(): array
     {
-        $all = $this->inner->all();
-        $warnings = $this->inner->warnings();
+        $all = $this->innerAll();
+        $warnings = $this->innerWarnings();
 
         foreach ($this->declared->declarations() as $declaration) {
             if (isset($all[$declaration->slug])) {
@@ -127,6 +156,37 @@ final class DeclaredContextsSource implements ContentSource
         }
 
         return $warnings;
+    }
+
+    /**
+     * @return array<string, ArticleData>
+     */
+    private function innerAll(): array
+    {
+        $this->rememberRequest();
+
+        return $this->innerAll ??= $this->inner->all();
+    }
+
+    /**
+     * @return list<SourceWarning>
+     */
+    private function innerWarnings(): array
+    {
+        $this->rememberRequest();
+
+        return $this->innerWarnings ??= $this->inner->warnings();
+    }
+
+    private function rememberRequest(): void
+    {
+        /** @var Request $request */
+        $request = $this->app->make('request');
+
+        if ($this->memoRequest !== $request) {
+            $this->memoRequest = $request;
+            $this->forget();
+        }
     }
 
     /**

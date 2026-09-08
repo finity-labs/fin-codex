@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace FinityLabs\FinCodex;
 
 use Filament\Forms\Components\Field;
+use FinityLabs\FinCodex\Auth\ArticlePolicyRegistration;
 use FinityLabs\FinCodex\Coverage\CoverageReport;
 use FinityLabs\FinCodex\Coverage\SourceWarnings;
 use FinityLabs\FinCodex\Forms\CodexHelp;
@@ -12,14 +13,13 @@ use FinityLabs\FinCodex\Help\ArticleLookup;
 use FinityLabs\FinCodex\Help\DeclaredContexts;
 use FinityLabs\FinCodex\Help\DeclaredContextsSource;
 use FinityLabs\FinCodex\Panel\CurrentPage;
-use FinityLabs\FinCodex\Policies\ArticlePolicy;
 use FinityLabs\LinCodex\Contracts\ContentSource;
 use FinityLabs\LinCodex\Models\Article;
+use FinityLabs\LinCodex\Models\ArticleContext;
+use FinityLabs\LinCodex\Models\ArticleTranslation;
 use Illuminate\Contracts\Container\Container;
-use Illuminate\Support\Facades\Gate;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
-use Throwable;
 
 class FinCodexServiceProvider extends PackageServiceProvider
 {
@@ -69,7 +69,7 @@ class FinCodexServiceProvider extends PackageServiceProvider
         $this->app->scoped(CoverageReport::class);
         $this->app->scoped(SourceWarnings::class);
         $this->app->singleton(DeclaredContexts::class);
-        $this->app->extend(ContentSource::class, static fn (ContentSource $inner, Container $app): ContentSource => new DeclaredContextsSource($inner, $app->make(DeclaredContexts::class)));
+        $this->app->extend(ContentSource::class, static fn (ContentSource $inner, Container $app): ContentSource => new DeclaredContextsSource($inner, $app->make(DeclaredContexts::class), $app));
     }
 
     /**
@@ -83,6 +83,7 @@ class FinCodexServiceProvider extends PackageServiceProvider
     public function packageBooted(): void
     {
         $this->registerPolicies();
+        $this->forgetSourceMemoOnWrite();
 
         Field::macro('codexHelp', function (string $slug, ?string $heading = null): Field {
             // Macroable binds the closure to the field; PHPStan types $this as the provider.
@@ -91,40 +92,43 @@ class FinCodexServiceProvider extends PackageServiceProvider
     }
 
     /**
-     * Give lin-codex's Article a policy: the host's when it wrote one, ours
-     * otherwise.
-     *
-     * The explicit registration is not optional. Gate::guessPolicyName() walks
-     * the model's own namespace, so for FinityLabs\LinCodex\Models\Article it
-     * only ever tries FinityLabs\Policies\ArticlePolicy,
-     * FinityLabs\LinCodex\Policies\ArticlePolicy and
-     * FinityLabs\LinCodex\Models\Policies\ArticlePolicy. Neither the host's
-     * App\Policies\ArticlePolicy nor ours is among them.
-     *
-     * One arm covers both stories a host can have. A hand-written policy lands
-     * at {policyNamespace}\ArticlePolicy, and so does the one Filament Shield
-     * writes for a vendor model — shield:generate puts it in the configured
-     * policies path, which is that same namespace by default. No Shield
-     * branch, no Shield dependency.
-     *
-     * FinCodexPlugin::get() reaches for the current panel and throws when
-     * there is none, which is the normal case here: packageBooted() also runs
-     * in console commands, queue workers and any request outside a panel. The
-     * catch keeps the registration happening anyway, on the default namespace.
+     * A write to an article, a translation or a context drops the decorated
+     * source's request memo, so a save earlier in the same request is visible
+     * to the next read, which is the guarantee the core's DatabaseSource gives
+     * by never memoising. Only a source that has already been resolved is
+     * touched: resolving it from inside a model event during a migration or a
+     * seeder would be the wrong moment.
+     */
+    protected function forgetSourceMemoOnWrite(): void
+    {
+        $forget = function (): void {
+            if (! $this->app->resolved(ContentSource::class)) {
+                return;
+            }
+
+            $source = $this->app->make(ContentSource::class);
+
+            // A host may rebind the source without the decorator, so the check stays.
+            if ($source instanceof DeclaredContextsSource) { // @phpstan-ignore instanceof.alwaysTrue
+                $source->forget();
+            }
+        };
+
+        foreach ([Article::class, ArticleTranslation::class, ArticleContext::class] as $model) {
+            $model::saved($forget);
+            $model::deleted($forget);
+        }
+    }
+
+    /**
+     * Give lin-codex's Article a policy while no panel is current: the
+     * default panel's namespace when the plugin is on it, App\Policies
+     * otherwise. FinCodexPlugin::boot() registers again with the booting
+     * panel's own namespace; Auth\ArticlePolicyRegistration explains why
+     * both calls exist.
      */
     protected function registerPolicies(): void
     {
-        try {
-            $namespace = FinCodexPlugin::get()->getPolicyNamespace();
-        } catch (Throwable) {
-            $namespace = 'App\\Policies';
-        }
-
-        $hostPolicy = $namespace.'\\ArticlePolicy';
-
-        Gate::getFacadeRoot()->policy(
-            Article::class,
-            class_exists($hostPolicy) ? $hostPolicy : ArticlePolicy::class,
-        );
+        ArticlePolicyRegistration::register(ArticlePolicyRegistration::defaultNamespace());
     }
 }

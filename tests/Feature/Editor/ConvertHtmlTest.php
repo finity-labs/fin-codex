@@ -179,7 +179,34 @@ it('converts every translation in one transaction with one Html revision each an
         ->assertDontSee('## Hi');
 });
 
+it('keeps the HTML as a revision while revisions are switched off, and says so in the modal', function (): void {
+    enableRevisions(false);
+    finCodexConvertUseLanguages(['en', 'de']);
+    $user = finCodexConvertUser();
+    $this->usesPanel('admin', $user);
+
+    $article = finCodexConvertSeed();
+
+    $component = Livewire::test(EditArticle::class, ['record' => $article->getRouteKey()])
+        ->mountAction('convert');
+
+    expect($component->instance()->getMountedAction()?->getModalDescription())
+        ->toBe(__('fin-codex::fin-codex.editor.convert.description_revisions_off'));
+
+    $component->callMountedAction()->assertHasNoActionErrors();
+
+    $revisions = ArticleRevision::query()->where('article_id', $article->id)->orderBy('locale')->get();
+
+    expect($article->fresh()->format)->toBe(ArticleFormat::Markdown)
+        ->and(finCodexConvertBodies($article)['en'])->toContain('## Hi')
+        ->and($revisions)->toHaveCount(2)
+        ->and($revisions->pluck('format')->unique()->all())->toBe([ArticleFormat::Html])
+        ->and($revisions->pluck('body')->all())->toBe([FIN_CODEX_HTML_DE, FIN_CODEX_HTML_EN])
+        ->and($revisions->pluck('user_id')->unique()->all())->toBe([$user->id]);
+});
+
 it('requires confirmation', function (): void {
+    enableRevisions(true);
     $this->usesPanel('admin', finCodexConvertUser());
 
     $article = finCodexConvertSeed();

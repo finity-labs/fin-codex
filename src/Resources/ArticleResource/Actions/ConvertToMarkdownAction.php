@@ -12,6 +12,7 @@ use FinityLabs\FinCodex\Editor\ArticleWriter;
 use FinityLabs\FinCodex\Resources\ArticleResource\Pages\EditArticle;
 use FinityLabs\LinCodex\Enums\ArticleFormat;
 use FinityLabs\LinCodex\Models\Article;
+use FinityLabs\LinCodex\Revisions\RevisionManager;
 
 /**
  * The one way out of a read-only HTML article.
@@ -19,10 +20,13 @@ use FinityLabs\LinCodex\Models\Article;
  * An imported HTML body is not editable in the panel (see TranslationTabs),
  * so this action is what makes such an article writable again: every
  * translation is converted in one transaction through ArticleWriter, which
- * records one revision per translation carrying the original HTML and the
- * panel user, so nothing is lost and the article can be read back as it was.
- * The confirmation is there because the conversion is not reversible from
- * the form — undoing it means restoring a revision.
+ * keeps one revision per translation carrying the original HTML and the
+ * panel user whether or not revisions are switched on, so nothing is lost
+ * and the article can be read back as it was. The confirmation is there
+ * because the conversion is not reversible from the form — undoing it means
+ * restoring a revision — and while revisions are off it says so, because the
+ * revisions tab is hidden in that state and the admin would otherwise be
+ * promised a safety net they cannot see.
  *
  * The page then redirects to itself instead of refilling the form. The
  * schema was built while the record was still Html, so its body components
@@ -51,7 +55,9 @@ final class ConvertToMarkdownAction
             ->visible(static fn (?Article $record): bool => $record?->format === ArticleFormat::Html)
             ->requiresConfirmation()
             ->modalHeading(__('fin-codex::fin-codex.editor.convert.heading'))
-            ->modalDescription(__('fin-codex::fin-codex.editor.convert.description'))
+            ->modalDescription(static fn (): string => (string) __(app(RevisionManager::class)->enabled()
+                ? 'fin-codex::fin-codex.editor.convert.description'
+                : 'fin-codex::fin-codex.editor.convert.description_revisions_off'))
             ->action(static function (Article $record, EditArticle $livewire): void {
                 app(ArticleWriter::class)->convertToMarkdown($record, $livewire->userId());
 

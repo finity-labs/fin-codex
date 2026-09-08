@@ -14,6 +14,7 @@ use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Schema;
 use Filament\View\PanelsRenderHook;
 use FinityLabs\FinCodex\Coverage\WarningsSection;
+use FinityLabs\FinCodex\FinCodexPlugin;
 use FinityLabs\FinCodex\Resources\ArticleResource;
 use FinityLabs\FinCodex\Resources\ArticleResource\Livewire\FileArticlesTable;
 use FinityLabs\LinCodex\Contracts\ContentSource;
@@ -38,6 +39,19 @@ use FinityLabs\LinCodex\Data\ArticleData;
 final class ListArticles extends ListRecords
 {
     protected static string $resource = ArticleResource::class;
+
+    /**
+     * The panel's resource, override included: Filament resolves the form,
+     * the table, the query, the relation managers, the URLs and the action
+     * authorization through this, so a host subclass named through
+     * FinCodexPlugin::articleResource() takes effect on the built-in pages.
+     *
+     * @return class-string<ArticleResource>
+     */
+    public static function getResource(): string
+    {
+        return FinCodexPlugin::articleResourceClass();
+    }
 
     /**
      * @return array<Action>

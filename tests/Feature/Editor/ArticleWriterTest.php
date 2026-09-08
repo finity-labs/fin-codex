@@ -204,8 +204,42 @@ it('saves a newly complete tab and deletes an emptied non-default tab', function
 
     $translations = ArticleTranslation::query()->where('article_id', $article->id)->get();
 
+    // The deleted German text is one restore away: the writer snapshots it
+    // before the delete while revisions are on, attributed to the user.
+    $snapshot = ArticleRevision::query()->sole();
+
     expect($translations->pluck('locale')->all())->toBe(['en'])
         ->and($translations[0]->updated_at->equalTo($enBefore))->toBeTrue()
+        ->and($snapshot->locale)->toBe('de')
+        ->and($snapshot->title)->toBe('Benutzer')
+        ->and($snapshot->body)->toBe('So funktionieren Benutzer.')
+        ->and($snapshot->user_id)->toBe($user->id);
+});
+
+it('refuses a non-default tab that carries only a title or only a body', function (): void {
+    $user = finCodexWriterUser();
+    $article = finCodexWriter()->create(finCodexWriterData(), $user->id);
+
+    foreach ([['title' => 'Benutzer', 'body' => ''], ['title' => '', 'body' => 'So funktionieren Benutzer.']] as $tab) {
+        expect(fn () => finCodexWriter()->update($article, finCodexWriterData(['translations' => ['de' => $tab]]), $user->id))
+            ->toThrow(InvalidArgumentException::class, 'The de translation needs both a title and a body, or neither.');
+    }
+
+    expect(ArticleTranslation::query()->where('article_id', $article->id)->pluck('locale')->all())->toBe(['en']);
+});
+
+it('deletes an emptied tab without a snapshot while revisions are off', function (): void {
+    enableRevisions(false);
+    $user = finCodexWriterUser();
+    $article = finCodexWriter()->create(finCodexWriterData([
+        'translations' => ['de' => ['title' => 'Benutzer', 'body' => 'So funktionieren Benutzer.']],
+    ]), $user->id);
+
+    finCodexWriter()->update($article, finCodexWriterData([
+        'translations' => ['de' => ['title' => '', 'body' => '']],
+    ]), $user->id);
+
+    expect(ArticleTranslation::query()->where('article_id', $article->id)->pluck('locale')->all())->toBe(['en'])
         ->and(ArticleRevision::query()->count())->toBe(0);
 });
 

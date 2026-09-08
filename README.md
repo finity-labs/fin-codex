@@ -125,7 +125,7 @@ FinCodexPlugin::make()
 
 > **The three class overrides must name a real subclass of ours.** Filament calls `registerRoutes()` and `registerNavigationItems()` statically on whatever string you pass at panel registration time, so a typo or a class that doesn't extend the built-in one is a fatal error on the next request, not a quietly ignored option. Keep the built-in slug (or override `getPages()` too) so the internal links keep resolving.
 
-Extending is the intended way to adjust things. All three built-ins are non-final, and a subclass inherits the list, the filters, the "From files" tab, the form, the relation managers and every header action for free:
+Extending is the intended way to adjust things. All three built-ins are non-final, and a subclass inherits the list, the filters, the "From files" tab, the form, the relation managers and every header action for free. The built-in pages resolve their resource through the plugin of the panel serving the request, so whatever you override on the subclass — the form, the table, `getEloquentQuery()`, the relation managers, the navigation statics — takes effect on those pages, and two panels can name two different subclasses:
 
 ```php
 use FinityLabs\FinCodex\Resources\ArticleResource;
@@ -262,7 +262,7 @@ Contexts that come from a `HasHelp` class are listed above the repeater as read-
 
 ### Languages
 
-One tab per language from the [settings](#settings). Each tab holds the title, excerpt and body for that language, plus **Copy from default language** for starting a translation from the current default text.
+One tab per language from the [settings](#settings). Each tab holds the title, excerpt and body for that language, plus **Copy from default language** for starting a translation from the current default text. A non-default tab is optional as a whole: it is saved when title and body are both filled, refused with a validation message when only one of them is, and deleted when both are emptied — after a snapshot while revisions are on, so the text it held is one restore away.
 
 A translation whose default-language source has changed since it was last saved gets an **Outdated** badge in the list and a filter of its own. Detection is timestamp-based, which has one edge worth knowing: changing an article's `keywords` or `format` re-indexes every translation to the same second and clears every outdated badge on that article. Content-hash detection is not in this release.
 
@@ -276,7 +276,9 @@ The disk needs a `url`, or the editor cannot show what was just uploaded. SVG is
 
 **Preview** renders the language tab you are on, through the core renderer, in the panel's theme. One tab at a time; per-tab buttons and a live preview are not in this release.
 
-**An HTML article is converted, not edited.** Its body stays read-only until one confirmed action rewrites every translation as Markdown in a single transaction. The original HTML survives as a revision, so the conversion is reversible by restoring it.
+**An HTML article is converted, not edited.** Its body stays read-only until one confirmed action rewrites every translation as Markdown in a single transaction. The original HTML survives as a revision whether or not revisions are switched on, so the conversion is reversible by restoring it; while they are off the confirmation says so, because the Revisions tab stays hidden until you enable them.
+
+**Renaming a section renames every descendant with it.** The rename is refused, on the slug field, when one of the slugs the descendants would take is already in use.
 
 **Deleting says what else it takes with it.** The modal names the child articles that lose this parent and where each one lands, and the media rows that lose their article. If the article is authenticated and has public children, those children would become guest-visible once the parent is gone — so the modal offers a checkbox, on by default, that sets them to authenticated instead. Untick it deliberately.
 
@@ -290,7 +292,7 @@ Every saved change to a language is recorded while revisions are on, with the au
 
 Preview renders a revision through the core renderer, in the revision's own format — an HTML snapshot of an article that has since been converted to Markdown still reads correctly. It is a rendered article, not a diff.
 
-Restoring loses nothing. The text about to be replaced is written to the same history first, tagged as a restore, so any restore can be undone by restoring the row it created. Restoring a pre-conversion HTML revision turns the article back into an HTML article.
+Restoring loses nothing. The text about to be replaced is written to the same history first, tagged as a restore, so any restore can be undone by restoring the row it created. Restoring a pre-conversion HTML revision turns the article back into an HTML article. The edit page reloads after a restore, so the form shows the restored text rather than what it held before.
 
 **Turning revisions off removes the Revisions tab.** With Media left as the only visible relation manager, Filament renders no tab strip at all and the Media table appears bare. That is expected, and the settings toggle's helper text says so.
 
@@ -326,7 +328,7 @@ Deleting an *article* leaves its `codex_media` rows with a null `article_id`. Th
 
 The panel and coverage filters are deferred: they show an **Apply** button, Filament's default, kept so the page behaves like the article list. Nothing happens until you press it.
 
-**The badge costs one report per panel page render.** Navigation is built on every page and the badge is read eagerly, so a request-scoped memo holds it to one route report plus one content-source read. If you don't want to pay it, extend the page, return `null` from `getNavigationBadge()`, and name your class through `->coveragePage(...)`.
+**The badges cost one report per panel page render.** Navigation is built on every page and both badges are read eagerly. The content source is read once per request and shared by the drawer, the coverage report and the warnings (the core rebuilds its set once more for warnings, so two reads in all), and the route report is built once. On a large knowledge base that is still a full hydration of every article on every page; if you don't want to pay it, extend the page, return `null` from `getNavigationBadge()`, and name your class through `->coveragePage(...)` — and the same for the warnings count on `->articleResource(...)`.
 
 ### Closing a gap from a row
 
@@ -392,6 +394,8 @@ class ArticlePolicy extends \FinityLabs\FinCodex\Policies\ArticlePolicy
 ```
 
 Don't edit the shipped file in `vendor/` — an update overwrites it.
+
+The namespace is a per-panel option and is registered when that panel boots for a request, so two panels can name two policies. Outside any panel — console commands, queue workers, routes of your own — the default panel's namespace applies, or `App\Policies` when the plugin is not on the default panel.
 
 > **If your application already has an `App\Models\Article`, read this one.** The lookup matches on class basename, so your existing `App\Policies\ArticlePolicy` — written for *your* Article — would be registered against lin-codex's model too, and would start answering questions it was never written for. Point Codex somewhere else:
 >

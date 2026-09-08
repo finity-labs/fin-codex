@@ -8,6 +8,7 @@ use Filament\Actions\Action;
 use Filament\Resources\Pages\EditRecord;
 use FinityLabs\FinCodex\Editor\ArticleWriter;
 use FinityLabs\FinCodex\Editor\MediaRecorder;
+use FinityLabs\FinCodex\FinCodexPlugin;
 use FinityLabs\FinCodex\Panel\Concerns\ResolvesPanelUser;
 use FinityLabs\FinCodex\Resources\ArticleResource;
 use FinityLabs\FinCodex\Resources\ArticleResource\Actions\ConvertToMarkdownAction;
@@ -36,6 +37,19 @@ final class EditArticle extends EditRecord
     use ResolvesPanelUser;
 
     protected static string $resource = ArticleResource::class;
+
+    /**
+     * The panel's resource, override included: Filament resolves the form,
+     * the table, the query, the relation managers, the URLs and the action
+     * authorization through this, so a host subclass named through
+     * FinCodexPlugin::articleResource() takes effect on the built-in pages.
+     *
+     * @return class-string<ArticleResource>
+     */
+    public static function getResource(): string
+    {
+        return FinCodexPlugin::articleResourceClass();
+    }
 
     /** The language tab the admin is looking at; Tabs::livewireProperty() writes it. */
     public ?string $activeLocale = null;

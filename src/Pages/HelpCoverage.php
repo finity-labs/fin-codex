@@ -501,9 +501,7 @@ class HelpCoverage extends Page implements HasTable
      */
     private function articleResource(): string
     {
-        $resource = FinCodexPlugin::get()->getArticleResource();
-
-        return is_a($resource, ArticleResource::class, true) ? $resource : ArticleResource::class;
+        return FinCodexPlugin::articleResourceClass();
     }
 
     /** The panel user's id, the attribution of the attach and the import. */

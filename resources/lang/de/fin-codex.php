@@ -103,6 +103,7 @@ return [
             'label' => 'In Markdown umwandeln',
             'heading' => 'Diesen Artikel in Markdown umwandeln?',
             'description' => 'Jede Übersetzung wird umgewandelt; das HTML bleibt als Revision erhalten.',
+            'description_revisions_off' => 'Jede Übersetzung wird umgewandelt. Das HTML bleibt als Revision erhalten, aber Revisionen sind ausgeschaltet; sie bleibt unsichtbar, bis Sie sie in den Hilfe-Einstellungen aktivieren.',
             'done' => 'In Markdown umgewandelt',
         ],
         'html_readonly' => 'HTML-Artikel sind schreibgeschützt; wandeln Sie sie in Markdown um, um den Inhalt zu bearbeiten.',
@@ -123,6 +124,7 @@ return [
         'validation' => [
             'slug_format' => 'Der Slug muss aus Kebab-Case-Segmenten bestehen, durch Schrägstriche getrennt.',
             'parent_missing' => 'Unter :parent existiert kein Artikel.',
+            'descendant_conflict' => 'Beim Umbenennen erhielte :descendant den Slug :slug, der bereits existiert.',
         ],
     ],
     'revisions' => [

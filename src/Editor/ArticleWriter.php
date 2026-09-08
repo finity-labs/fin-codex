@@ -26,8 +26,9 @@ use InvalidArgumentException;
  *
  * Translations arrive as form state keyed by locale (the language tabs),
  * not as a relationship repeater: a tab is written when it has a title and
- * a body, an emptied non-default tab is deleted, and the default-locale tab
- * is required on every write. Contexts are a list in author order and are
+ * a body, a non-default tab emptied of both is deleted (after a snapshot,
+ * while revisions are on), a tab with only one of the two is refused, and
+ * the default-locale tab is required on every write. Contexts are a list in author order and are
  * replaced wholesale, sort_order being the position, mirroring the core's
  * ArticleImporter.
  *
@@ -68,7 +69,7 @@ final class ArticleWriter
             $article = new Article([...$attributes, 'created_by' => $userId, 'updated_by' => $userId]);
             $article->save();
 
-            $this->writeTranslations($article, $translations);
+            $this->writeTranslations($article, $translations, $userId);
             $this->replaceContexts($article, $contexts);
 
             return $article;
@@ -90,7 +91,7 @@ final class ArticleWriter
             $article->fill([...$attributes, 'updated_by' => $userId])->save();
 
             $this->renameDescendants($article, $oldSlug);
-            $this->writeTranslations($article, $translations);
+            $this->writeTranslations($article, $translations, $userId);
             $this->replaceContexts($article, $contexts);
 
             return $article;
@@ -157,15 +158,15 @@ final class ArticleWriter
     }
 
     /**
-     * Convert an HTML article to Markdown in one transaction: the format is
-     * saved first under attributing(), so the core's updating hook records
-     * one revision per translation carrying the original Html format and
-     * the HTML body, authored by $userId; the converted bodies are then
-     * saved under withoutRevisions(), because the translation hook would
-     * otherwise record each HTML body a second time, labelled Markdown.
-     * Each body save re-indexes search_text through the translation hook
-     * (the format save already ran one pass through reindexTranslations();
-     * two passes are accepted). A Markdown article is returned untouched.
+     * Convert an HTML article to Markdown in one transaction. The HTML is
+     * always kept as one revision per translation, whatever the revisions
+     * switch says: while revisions are on, the format save under
+     * attributing() makes the core's updating hook record them; while they
+     * are off (a fresh install's default) the hook records nothing, so the
+     * snapshots are taken here first, with the article still Html. The
+     * converted bodies are then saved under withoutRevisions(), because the
+     * translation hook would otherwise record each HTML body a second time,
+     * labelled Markdown. A Markdown article is returned untouched.
      */
     public function convertToMarkdown(Article $article, ?int $userId): Article
     {
@@ -174,8 +175,16 @@ final class ArticleWriter
         }
 
         return DB::transaction(fn (): Article => $this->revisions->attributing(RevisionReason::Manual, $userId, function () use ($article, $userId): Article {
+            if (! $this->revisions->enabled()) {
+                foreach ($article->translations()->get() as $translation) {
+                    $this->snapshot($article, $translation, $userId);
+                }
+            }
+
             $article->fill(['format' => ArticleFormat::Markdown, 'updated_by' => $userId])->save();
 
+            // Re-read after the format save: its saved hook re-indexed every
+            // translation, and a row loaded before it would carry stale state.
             $this->revisions->withoutRevisions(function () use ($article): void {
                 foreach ($article->translations()->get() as $translation) {
                     $translation->body = $this->converter->convert($translation->body);
@@ -185,6 +194,18 @@ final class ArticleWriter
 
             return $article;
         }));
+    }
+
+    /**
+     * One revision of the translation as it is stored right now. The article
+     * is handed over rather than lazy-loaded: strict models refuse a lazy
+     * load on a model that came out of a multi-row collection.
+     */
+    private function snapshot(Article $article, ArticleTranslation $translation, ?int $userId): void
+    {
+        $translation->setRelation('article', $article);
+
+        $this->revisions->snapshot($translation, RevisionReason::Manual, $userId);
     }
 
     /**
@@ -271,17 +292,18 @@ final class ArticleWriter
      * Write the language tabs. The default-locale tab is validated before
      * anything is touched; a complete tab is saved (a missing body key keeps
      * the stored body, which is how an HTML article's read-only body
-     * arrives; a null excerpt clears the excerpt), an incomplete non-default
-     * tab that exists is deleted, anything else is skipped. firstOrNew()
-     * loads one row, so strict lazy-loading never trips, and the
-     * translation hook's own $translation->article read is a single-model
-     * lazy load, which strict mode allows.
+     * arrives; a null excerpt clears the excerpt); a tab that carries a body
+     * key with only one of title and body filled is refused, because a
+     * half-cleared tab is a mistake, not an instruction; a non-default tab
+     * emptied of both is deleted, after a snapshot while revisions are on,
+     * so the text it held is one restore away; anything else is skipped.
+     * firstOrNew() loads one row, so strict lazy-loading never trips.
      *
      * @param  array<string, array<string, mixed>>  $tabs
      *
-     * @throws InvalidArgumentException when the default-locale tab has no title or no body
+     * @throws InvalidArgumentException when the default-locale tab has no title or no body, or any tab has only one of them
      */
-    private function writeTranslations(Article $article, array $tabs): void
+    private function writeTranslations(Article $article, array $tabs, ?int $userId): void
     {
         $default = app(CodexSettings::class)->default_locale;
         $defaultRow = $this->translationRow($article, $default);
@@ -300,7 +322,15 @@ final class ArticleWriter
                 continue;
             }
 
+            if ($this->isPartial($tab)) {
+                throw new InvalidArgumentException(sprintf('The %s translation needs both a title and a body, or neither.', $locale));
+            }
+
             if ($row->exists && $locale !== $default) {
+                if ($this->revisions->enabled()) {
+                    $this->snapshot($article, $row, $userId);
+                }
+
                 $row->delete();
             }
         }
@@ -328,6 +358,18 @@ final class ArticleWriter
         }
 
         return $row->exists;
+    }
+
+    /**
+     * A tab that carries a body key and fills exactly one of title and body.
+     * A tab without a body key is never partial: that is an HTML article's
+     * read-only body arriving, and isComplete() already answered for it.
+     *
+     * @param  array<string, mixed>  $tab
+     */
+    private function isPartial(array $tab): bool
+    {
+        return array_key_exists('body', $tab) && filled($tab['title'] ?? null) !== filled($tab['body']);
     }
 
     /**

@@ -8,7 +8,9 @@ use Filament\Facades\Filament;
 use Filament\Pages\Page as BasePage;
 use Filament\Resources\Pages\Page as ResourcePage;
 use FinityLabs\FinCodex\Editor\ContextPicker;
+use FinityLabs\FinCodex\FinCodexPlugin;
 use FinityLabs\FinCodex\Help\DeclaredContextsSource;
+use FinityLabs\FinCodex\Resources\ArticleResource;
 use FinityLabs\LinCodex\Contexts\ContextIndex;
 use FinityLabs\LinCodex\Contexts\PageContext;
 use FinityLabs\LinCodex\Contracts\ContentSource;
@@ -134,16 +136,25 @@ final class CoverageReport
      * Resources\Pages\Page extends BasePage, not Pages\Page, so the two checks
      * are disjoint; the resource check comes first for readability.
      *
+     * The package's own pages answer getResource() with the CURRENT panel's
+     * resource, and this report scans every panel from one request, so for
+     * them the resource is asked of the route's panel instead: a staff row
+     * files under staff's override even while admin is the panel serving.
+     *
      * @param  class-string|string|null  $pageClass
      */
-    public static function helpClass(?string $pageClass): ?string
+    public static function helpClass(?string $pageClass, ?string $panelId = null): ?string
     {
         if ($pageClass === null || $pageClass === '' || ! class_exists($pageClass)) {
             return null;
         }
 
         if (is_subclass_of($pageClass, ResourcePage::class)) {
-            return $pageClass::getResource();
+            $resource = $pageClass::getResource();
+
+            return $panelId !== null && is_a($resource, ArticleResource::class, true)
+                ? FinCodexPlugin::articleResourceClass($panelId)
+                : $resource;
         }
 
         return is_subclass_of($pageClass, BasePage::class) ? ltrim($pageClass, '\\') : null;
@@ -181,7 +192,7 @@ final class CoverageReport
 
         foreach ($report as $route) {
             $panelId = $this->panelId($route->name);
-            $helpClass = self::helpClass($route->pageClass);
+            $helpClass = self::helpClass($route->pageClass, $panelId);
             $key = $helpClass !== null ? $panelId.'|'.$helpClass : $route->name;
 
             $groups[$key] ??= ['panelId' => $panelId, 'helpClass' => $helpClass, 'routes' => []];

@@ -7,6 +7,8 @@ use FinityLabs\FinCodex\Editor\ContextPicker;
 use FinityLabs\FinCodex\Resources\ArticleResource;
 use FinityLabs\FinCodex\Tests\Fixtures\Pages\AdminHelpSettings;
 use FinityLabs\FinCodex\Tests\Fixtures\Pages\Reports;
+use FinityLabs\FinCodex\Tests\Fixtures\Resources\AdminHelpArticleResource;
+use FinityLabs\FinCodex\Tests\Fixtures\Resources\StaffHelpArticleResource;
 use FinityLabs\FinCodex\Tests\Fixtures\Resources\UserResource;
 use FinityLabs\FinCodex\Tests\Fixtures\Resources\UserResource\Pages\CreateUser;
 use FinityLabs\FinCodex\Tests\Fixtures\Resources\UserResource\Pages\EditUser;
@@ -192,15 +194,23 @@ it('places every route of the core report in exactly one row', function (): void
         ->and($reported)->toContain('shop.index');
 });
 
-it('folds a host resource subclass onto the package resource the pages name', function (): void {
-    // Admin registers AdminHelpArticleResource, but its pages are the
-    // package's own, whose getResource() answers ArticleResource — the same
-    // class PageIdentity hands the drawer on those pages.
-    $rows = finCodexCoverageRowsFor('admin', ArticleResource::class);
+it('files the package pages under each panel\'s own resource override', function (): void {
+    // Admin registers AdminHelpArticleResource and staff StaffHelpArticleResource;
+    // the pages are the package's own and answer getResource() with the
+    // CURRENT panel's class, so the report asks each route's panel instead.
+    // That is also the class PageIdentity hands the drawer on those pages.
+    $this->usesPanel('admin');
 
-    expect($rows)->toHaveCount(1)
-        ->and($rows[0]->routeCount())->toBe(3)
-        ->and($rows[0]->key)->toBe('filament.admin.resources.help-articles.create');
+    $admin = finCodexCoverageRowsFor('admin', AdminHelpArticleResource::class);
+    $staff = finCodexCoverageRowsFor('staff', StaffHelpArticleResource::class);
+
+    expect($admin)->toHaveCount(1)
+        ->and($admin[0]->routeCount())->toBe(3)
+        ->and($admin[0]->key)->toBe('filament.admin.resources.help-articles.create')
+        ->and($staff)->toHaveCount(1)
+        ->and($staff[0]->routeCount())->toBe(3)
+        ->and(finCodexCoverageRowsFor('admin', ArticleResource::class))->toBe([])
+        ->and(finCodexCoverageRowsFor('staff', AdminHelpArticleResource::class))->toBe([]);
 });
 
 /*

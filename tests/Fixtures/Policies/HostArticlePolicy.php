@@ -10,9 +10,10 @@ use FinityLabs\FinCodex\Policies\ArticlePolicy;
  * A host's own policy, standing in for the class a real application writes at
  * {policyNamespace}\ArticlePolicy.
  *
- * It overrides nothing on purpose. The override test class_alias()es it onto
- * Staff\Policies\ArticlePolicy, and an alias lives for the rest of the PHP
- * process — so a permissive subclass cannot redden a later test that happens
- * to run with the staff panel current.
+ * It overrides nothing on purpose. The override tests class_alias() it into a
+ * namespace no fixture panel names (FinCodexHostTest\Policies) and point one
+ * panel's plugin there at runtime; an alias lives for the rest of the PHP
+ * process, so a permissive subclass in a fixture namespace could redden a
+ * later test that boots the same panel.
  */
 class HostArticlePolicy extends ArticlePolicy {}
