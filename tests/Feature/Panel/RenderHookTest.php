@@ -69,7 +69,10 @@ it('gives the topbar button the same identity as the drawer', function (string $
         ->and(substr_count($html, 'data-fin-codex-page="'.$pageClass.'"'))->toBe(2)
         ->and(substr_count($html, 'data-fin-codex-resource="'.(string) $resourceClass.'"'))->toBe(2)
         ->and(substr_count($html, 'data-fin-codex-guard="'.$guard.'"'))->toBe(2)
-        ->and($html)->not->toContain('data-fin-codex-guest-link');
+        ->and($html)->not->toContain('data-fin-codex-guest-link')
+        // The drawer's Alpine glue is a core partial included by fin-codex's
+        // view; Livewire ships it in wire:effects, attribute-escaped.
+        ->toMatch("/Alpine\\.data\\((&#039;|'|\\\\u0027)codexDrawer/");
 })->with([
     'admin dashboard' => ['web', '/admin', 'admin', Dashboard::class, null],
     'admin users create' => ['web', '/admin/users/create', 'admin', UserResource::class, UserResource::class],
@@ -85,8 +88,8 @@ it('shows the same article count in the badge and in the drawer on every page of
 
     $html = $this->actingAs($user, 'web')->get($path)->assertOk()->getContent();
 
-    expect($html)->toMatch('/codex-help-button__badge[^>]*>2</')
-        ->toContain('data-codex-page-count="2"')
+    expect(finCodexButtonBadge($html, 'admin'))->toBe(2)
+        ->and($html)->toContain('data-codex-page-count="2"')
         ->toContain('data-codex-page-article="managing-users"')
         ->toContain('data-codex-page-article="inviting-users"');
 })->with(['/admin/users', '/admin/users/create']);
@@ -96,6 +99,6 @@ it('renders the guest help link under the login form and no topbar button', func
 
     expect(substr_count($html, 'data-fin-codex-guest-link="admin"'))->toBe(1)
         ->and($html)->toContain(__('fin-codex::fin-codex.guest.link'))
-        ->toContain('codex-help-button--labelled')
+        ->toContain('fi-link')
         ->not->toContain('data-fin-codex-help-button');
 });

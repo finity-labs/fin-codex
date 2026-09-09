@@ -95,11 +95,23 @@ class FinCodexPlugin implements Plugin
     {
         $panel->renderHook(PanelsRenderHook::HEAD_END, fn (array $scopes = []): HtmlString => $this->mount()->head($panel));
 
+        // USER_MENU_AFTER renders inside Filament's user menu component, which
+        // sits in the fi-topbar-end group beside the notification bell on a
+        // panel with a topbar and in the sidebar footer on one without, so
+        // one hook covers both layouts. The two fallbacks only render on a
+        // panel that has no user menu at all (->userMenu(false)): TOPBAR_END
+        // with a topbar, SIDEBAR_FOOTER without. Every decision that depends
+        // on panel state is made at render time, because the host may chain
+        // ->topbar(false) or ->userMenu(false) after ->plugin(). The topbar
+        // end group is x-persist-ed, so under SPA mode the badge keeps the
+        // count of the page the button was first rendered on (the README says
+        // so); a host that wants it live there names TOPBAR_END.
         if ($this->hasExplicitHelpButtonRenderHook()) {
             $panel->renderHook($this->getHelpButtonRenderHook(), fn (array $scopes = []): HtmlString => $this->mount()->button($this, $panel));
         } else {
-            $panel->renderHook(PanelsRenderHook::TOPBAR_END, fn (array $scopes = []): HtmlString => $this->mount()->button($this, $panel));
-            $panel->renderHook(PanelsRenderHook::SIDEBAR_FOOTER, fn (array $scopes = []): HtmlString => $panel->hasTopbar() ? new HtmlString('') : $this->mount()->button($this, $panel));
+            $panel->renderHook(PanelsRenderHook::USER_MENU_AFTER, fn (array $scopes = []): HtmlString => $this->mount()->button($this, $panel));
+            $panel->renderHook(PanelsRenderHook::TOPBAR_END, fn (array $scopes = []): HtmlString => $panel->hasUserMenu() || ! $panel->hasTopbar() ? new HtmlString('') : $this->mount()->button($this, $panel));
+            $panel->renderHook(PanelsRenderHook::SIDEBAR_FOOTER, fn (array $scopes = []): HtmlString => $panel->hasUserMenu() || $panel->hasTopbar() ? new HtmlString('') : $this->mount()->button($this, $panel));
         }
 
         $panel->renderHook(PanelsRenderHook::SIMPLE_PAGE_END, fn (array $scopes = []): HtmlString => $this->mount()->guestLink($this, $panel));
@@ -224,12 +236,12 @@ class FinCodexPlugin implements Plugin
 
     public function getHelpButtonRenderHook(): string
     {
-        return $this->evaluate($this->helpButtonRenderHook) ?? PanelsRenderHook::TOPBAR_END;
+        return $this->evaluate($this->helpButtonRenderHook) ?? PanelsRenderHook::USER_MENU_AFTER;
     }
 
     /**
      * True when the host chose the hook; register() then honours it as given
-     * and skips the sidebar fallback.
+     * and registers no fallback.
      */
     public function hasExplicitHelpButtonRenderHook(): bool
     {

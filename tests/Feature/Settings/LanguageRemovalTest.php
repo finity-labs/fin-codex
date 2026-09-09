@@ -306,6 +306,7 @@ it('asks once more when a save is about to drop a language', function (): void {
     $action = finCodexRemovalMountSave($page);
 
     expect($action)->not->toBeNull()
+        ->and($action?->shouldOpenModal())->toBeTrue()
         ->and($action?->isConfirmationRequired())->toBeTrue()
         ->and((string) $action?->getModalHeading())->toBe((string) __('fin-codex::fin-codex.settings.removal.heading'));
 
@@ -315,9 +316,10 @@ it('asks once more when a save is about to drop a language', function (): void {
         ->toContain((string) __('fin-codex::fin-codex.settings.removal.intro'))
         // The language and what it holds, so the cost is on screen before the
         // press, not after it.
-        ->toContain((string) __('fin-codex::fin-codex.settings.removal.row', ['locale' => 'de', 'count' => 2]))
-        // And the sentence that stops the panic.
-        ->toContain((string) __('fin-codex::fin-codex.settings.removal.kept'));
+        ->toContain((string) __('fin-codex::fin-codex.settings.removal.row', ['locale' => 'de', 'count' => 2]));
+
+    // And the checkbox that decides what happens to the texts, on by default.
+    $page->assertSchemaStateSet(['keep_translations' => true], 'mountedActionSchema0');
 });
 
 it('names every language going away, each with its own count', function (): void {
@@ -346,13 +348,25 @@ it('does not ask when nothing is being removed', function (): void {
 
     $page->set('data.languages', array_values($rows));
 
-    expect(finCodexRemovalSaveAction($page)->isConfirmationRequired())->toBeFalse()
+    // shouldOpenModal() is the question, not isConfirmationRequired(): Filament
+    // opens a modal for any action with a custom heading, so the heading alone
+    // once opened an empty box on every save.
+    expect(finCodexRemovalSaveAction($page)->shouldOpenModal())->toBeFalse()
         ->and($page->instance()->removedLanguages())->toBe([]);
 
-    // The confirmation must not become a speed bump on every save.
-    $page->call('save')->assertHasNoErrors();
+    // Mounting the button runs the save straight through: nothing to confirm.
+    expect(finCodexRemovalMountSave($page))->toBeNull()
+        ->and(finCodexRemovalStored()->languages[1]['display'])->toBe('Deutsch (Österreich)');
+});
 
-    expect(finCodexRemovalStored()->languages[1]['display'])->toBe('Deutsch (Österreich)');
+it('saves an untouched form without a modal', function (): void {
+    finCodexRemovalSeed(['en', 'de'], 'en');
+
+    $page = finCodexRemovalPage();
+
+    expect(finCodexRemovalSaveAction($page)->shouldOpenModal())->toBeFalse()
+        ->and(finCodexRemovalMountSave($page))->toBeNull()
+        ->and(finCodexRemovalStoredCodes())->toBe(['en', 'de']);
 });
 
 it('writes the shortened list when the confirmation is accepted', function (): void {
@@ -366,7 +380,7 @@ it('writes the shortened list when the confirmation is accepted', function (): v
 
     finCodexRemovalMountSave($page);
 
-    $page->callMountedAction();
+    $page->setActionData(['keep_translations' => true])->callMountedAction();
 
     expect(finCodexRemovalStoredCodes())->toBe(['en']);
 });
@@ -388,7 +402,28 @@ it('writes nothing when the confirmation is left standing', function (): void {
  * The locked decision, and the row that gets to be explicit about it.
  */
 
-it('deletes no translation when a language is removed, and gives them all back when it returns', function (): void {
+it('deletes every translation and revision in a removed language when the checkbox is unticked, and nothing else', function (): void {
+    finCodexRemovalSeed(['en', 'de'], 'en');
+    $english = finCodexRemovalTranslations('en', 1);
+    $german = finCodexRemovalTranslations('de', 3);
+    ArticleRevision::factory()->create(['article_id' => $english[0]->article_id, 'locale' => 'en']);
+    ArticleRevision::factory()->create(['article_id' => $german[0]->article_id, 'locale' => 'de']);
+
+    $page = finCodexRemovalPage();
+    $rows = finCodexRemovalRows($page);
+
+    $page->set('data.languages', [$rows['en']]);
+    finCodexRemovalMountSave($page);
+    $page->setActionData(['keep_translations' => false])->callMountedAction()->assertNotified();
+
+    expect(finCodexRemovalStoredCodes())->toBe(['en'])
+        ->and(ArticleTranslation::query()->where('locale', 'de')->count())->toBe(0)
+        ->and(ArticleRevision::query()->where('locale', 'de')->count())->toBe(0)
+        ->and(ArticleTranslation::query()->where('locale', 'en')->count())->toBe(1)
+        ->and(ArticleRevision::query()->where('locale', 'en')->count())->toBe(1);
+});
+
+it('deletes nothing when the checkbox stays ticked, and gives the texts back when the language returns', function (): void {
     finCodexRemovalSeed(['en', 'de'], 'en');
     finCodexRemovalTranslations('en', 1);
     $german = finCodexRemovalTranslations('de', 3);
@@ -398,7 +433,7 @@ it('deletes no translation when a language is removed, and gives them all back w
 
     $page->set('data.languages', [$rows['en']]);
     finCodexRemovalMountSave($page);
-    $page->callMountedAction();
+    $page->setActionData(['keep_translations' => true])->callMountedAction();
 
     expect(finCodexRemovalStoredCodes())->toBe(['en'])
         // Not one row went away, and every one of them still reads exactly as

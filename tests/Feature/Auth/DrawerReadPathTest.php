@@ -94,7 +94,8 @@ function finCodexReadCount(string $html): ?string
 /** The number on the help button's badge, or null when it carries none. */
 function finCodexReadBadge(string $html): ?string
 {
-    preg_match('/codex-help-button__badge[^>]*>\s*(\d+)\s*</', $html, $matches);
+    $badge = finCodexButtonBadge($html, 'admin');
+    $matches = $badge === null ? [] : [null, (string) $badge];
 
     return $matches[1] ?? null;
 }

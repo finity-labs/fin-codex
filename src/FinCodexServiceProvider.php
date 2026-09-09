@@ -12,12 +12,14 @@ use FinityLabs\FinCodex\Forms\CodexHelp;
 use FinityLabs\FinCodex\Help\ArticleLookup;
 use FinityLabs\FinCodex\Help\DeclaredContexts;
 use FinityLabs\FinCodex\Help\DeclaredContextsSource;
+use FinityLabs\FinCodex\Livewire\HelpDrawer;
 use FinityLabs\FinCodex\Panel\CurrentPage;
 use FinityLabs\LinCodex\Contracts\ContentSource;
 use FinityLabs\LinCodex\Models\Article;
 use FinityLabs\LinCodex\Models\ArticleContext;
 use FinityLabs\LinCodex\Models\ArticleTranslation;
 use Illuminate\Contracts\Container\Container;
+use Livewire\Livewire;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
 
@@ -84,6 +86,10 @@ class FinCodexServiceProvider extends PackageServiceProvider
     {
         $this->registerPolicies();
         $this->forgetSourceMemoOnWrite();
+
+        // The core drawer with fin-codex's Filament-native shell; the panel
+        // mount renders this tag, a page outside Filament keeps the core's.
+        Livewire::component('fin-codex.help-drawer', HelpDrawer::class);
 
         Field::macro('codexHelp', function (string $slug, ?string $heading = null): Field {
             // Macroable binds the closure to the field; PHPStan types $this as the provider.

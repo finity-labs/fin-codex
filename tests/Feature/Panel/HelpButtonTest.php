@@ -59,8 +59,8 @@ it('shows the page\'s article count in the badge and the same count in the drawe
     $html = $this->actingAs(finCodexWebUser(), 'web')->get('/admin')->assertOk()->getContent();
 
     expect(finCodexButtonCount($html, 'admin'))->toBe(1)
-        ->and($html)->toMatch('/codex-help-button__badge[^>]*>3</')
-        ->toContain('data-codex-page-count="3"')
+        ->and(finCodexButtonBadge($html, 'admin'))->toBe(3)
+        ->and($html)->toContain('data-codex-page-count="3"')
         ->toContain('data-codex-page-article="dash-one"')
         ->toContain('data-codex-page-article="dash-two"')
         ->toContain('data-codex-page-article="dash-members"');
@@ -70,8 +70,8 @@ it('keeps the button without a badge when the page has no articles', function ()
     $html = $this->actingAs(finCodexWebUser(), 'web')->get('/admin')->assertOk()->getContent();
 
     expect(finCodexButtonCount($html, 'admin'))->toBe(1)
-        ->and($html)->not->toContain('codex-help-button__badge')
-        ->toContain('data-codex-page-count="0"');
+        ->and(finCodexButtonBadge($html, 'admin'))->toBeNull()
+        ->and($html)->toContain('data-codex-page-count="0"');
 });
 
 it('renders the button at the panel\'s configured topbar hook', function (string $guard, string $path, string $panel, string $position): void {
@@ -100,7 +100,7 @@ it('renders the button at the panel\'s configured topbar hook', function (string
     'staff at TOPBAR_START' => ['staff', '/staff', 'staff', 'before'],
 ]);
 
-it('falls back to the sidebar footer when the panel has no topbar and no explicit hook', function (): void {
+it('lands in the sidebar footer with the user menu when the panel has no topbar and no explicit hook', function (): void {
     $html = $this->actingAs(finCodexWebUser(), 'web')->get('/portal')->assertOk()->getContent();
 
     expect(finCodexButtonCount($html, 'portal'))->toBe(1)
@@ -109,7 +109,26 @@ it('falls back to the sidebar footer when the panel has no topbar and no explici
         ->and(strpos($html, 'data-fin-codex-help-button="portal"'))->toBeGreaterThan(strpos($html, 'fi-sidebar'));
 });
 
-it('decides the fallback at render time, so a topbar turned on after registration wins', function (): void {
+it('falls back to the sidebar footer on a panel with neither topbar nor user menu, and to the topbar end with a topbar but no user menu', function (): void {
+    Filament::getPanel('portal')->userMenu(false);
+    $user = finCodexWebUser();
+
+    $html = $this->actingAs($user, 'web')->get('/portal')->assertOk()->getContent();
+
+    expect(finCodexButtonCount($html, 'portal'))->toBe(1)
+        ->and($html)->not->toContain('fi-user-menu')
+        ->and(strpos($html, 'data-fin-codex-help-button="portal"'))->toBeGreaterThan(strpos($html, 'fi-sidebar-footer') ?: strpos($html, 'fi-sidebar'));
+
+    Filament::getPanel('portal')->topbar(true);
+
+    $html = $this->actingAs($user, 'web')->get('/portal')->assertOk()->getContent();
+
+    expect(finCodexButtonCount($html, 'portal'))->toBe(1)
+        ->and($html)->not->toContain('fi-user-menu')
+        ->and(strpos($html, 'data-fin-codex-help-button="portal"'))->toBeGreaterThan(strpos($html, 'class="fi-topbar-end"'));
+});
+
+it('decides the placement at render time, so a topbar turned on after registration wins', function (): void {
     Filament::getPanel('portal')->topbar(true);
 
     $html = $this->actingAs(finCodexWebUser(), 'web')->get('/portal')->assertOk()->getContent();
@@ -145,14 +164,35 @@ it('keeps the guest link on the login page with helpButton(false)', function ():
         ->and($html)->not->toContain('data-fin-codex-help-button');
 });
 
-it('labels the icon-only button for assistive tech and gives it a Filament tooltip', function (): void {
+it('is Filament\'s own icon button in the primary colour, labelled for assistive tech, with a tooltip', function (): void {
     $html = $this->actingAs(finCodexWebUser(), 'web')->get('/admin')->assertOk()->getContent();
 
-    expect($html)->toContain('aria-label="Help"')
-        ->toContain('x-tooltip="{ content: &#039;Help&#039;, theme: $store.theme }"')
-        ->toMatch('/class="codex-help-button[^"]*fin-codex-help-button"/')
-        ->not->toContain('codex-help-button--labelled')
-        ->not->toContain('codex-help-button__label');
+    expect(finCodexButtonTag($html, 'admin'))
+        ->toContain('fi-icon-btn')
+        ->not->toContain('fi-size-xl')
+        ->toContain('aria-label="Help"')
+        ->toMatch('/content: (&#039;|\')Help(&#039;|\')/')
+        ->toContain('href="')
+        ->toContain('data-codex-help-button')
+        ->toContain("new CustomEvent('codex:open')")
+        // The bell's sizing: a lg icon in a default-size button.
+        ->and($html)->toMatch('/data-fin-codex-help-button="admin"[\s\S]*?<svg class="fi-icon fi-size-lg"/')
+        ->not->toContain('codex-help-button--labelled');
+});
+
+it('renders the default hook inside the topbar end group, after the user menu', function (): void {
+    Filament::getPanel('portal')->topbar(true);
+
+    $html = $this->actingAs(finCodexWebUser(), 'web')->get('/portal')->assertOk()->getContent();
+
+    $button = (int) strpos($html, 'data-fin-codex-help-button="portal"');
+    $group = (int) strpos($html, 'class="fi-topbar-end"');
+    $userMenu = (int) strpos($html, 'fi-user-menu', $group);
+    $navEnd = (int) strpos($html, '</nav>', $group);
+
+    expect($userMenu)->toBeGreaterThan($group)
+        ->and($button)->toBeGreaterThan($userMenu)
+        ->and($button)->toBeLessThan($navEnd);
 });
 
 /*
@@ -169,7 +209,7 @@ it('keeps the button through a refresh-topbar re-render of the Topbar component'
         ->assertSeeHtml('<div wire:ignore data-fin-codex-help-button="admin"')
         ->dispatch('refresh-topbar')
         ->assertSeeHtml('<div wire:ignore data-fin-codex-help-button="admin"')
-        ->assertDontSeeHtml('codex-help-button__badge');
+        ->assertDontSeeHtml('fi-icon-btn-badge-ctn');
 });
 
 it('passes each panel\'s own shortcut and width to its drawer', function (string $guard, string $path, string $shortcut, int $width, string $other): void {

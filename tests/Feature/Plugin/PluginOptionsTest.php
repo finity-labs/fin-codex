@@ -64,7 +64,7 @@ function staffOptions(): array
 
 it('starts from the documented defaults on a fresh instance', function (): void {
     expect(pluginOptions(FinCodexPlugin::make()))->toBe([
-        'helpButtonRenderHook' => PanelsRenderHook::TOPBAR_END,
+        'helpButtonRenderHook' => PanelsRenderHook::USER_MENU_AFTER,
         'shortcut' => 'ctrl+/',
         'drawerWidth' => 480,
         'globalSearch' => false,
@@ -138,11 +138,11 @@ it('defaults helpButton and guestDrawer to on and evaluates closures', function 
         ->and($plugin->guestDrawer()->hasGuestDrawer())->toBeTrue();
 });
 
-it('tracks whether the help button hook was set explicitly and keeps TOPBAR_END as the default', function (): void {
+it('tracks whether the help button hook was set explicitly and keeps USER_MENU_AFTER as the default', function (): void {
     $plugin = FinCodexPlugin::make();
 
     expect($plugin->hasExplicitHelpButtonRenderHook())->toBeFalse()
-        ->and($plugin->getHelpButtonRenderHook())->toBe(PanelsRenderHook::TOPBAR_END);
+        ->and($plugin->getHelpButtonRenderHook())->toBe(PanelsRenderHook::USER_MENU_AFTER);
 
     $plugin->helpButtonRenderHook(PanelsRenderHook::SIDEBAR_FOOTER);
 
@@ -157,7 +157,7 @@ it('reads explicit hooks on admin and staff and the default on portal', function
     expect(finCodexPluginOf('admin')->hasExplicitHelpButtonRenderHook())->toBeTrue()
         ->and(finCodexPluginOf('staff')->hasExplicitHelpButtonRenderHook())->toBeTrue()
         ->and($portal->hasExplicitHelpButtonRenderHook())->toBeFalse()
-        ->and($portal->getHelpButtonRenderHook())->toBe(PanelsRenderHook::TOPBAR_END)
+        ->and($portal->getHelpButtonRenderHook())->toBe(PanelsRenderHook::USER_MENU_AFTER)
         ->and($portal->getShortcut())->toBe('ctrl+/')
         ->and($portal->getDrawerWidth())->toBe(480);
 });

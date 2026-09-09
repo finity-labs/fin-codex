@@ -105,8 +105,8 @@ it('lists declared articles first in declared order and collapses a declared-and
     $html = $this->actingAs(finCodexDeclaredUser('web'), 'web')->get($path)->assertOk()->getContent();
 
     expect(finCodexDeclaredOrder($html))->toBe(['users', 'user-roles', 'stored-admin'])
-        ->and($html)->toMatch('/codex-help-button__badge[^>]*>3</')
-        ->toContain('data-codex-page-count="3"')
+        ->and(finCodexButtonBadge($html, 'admin'))->toBe(3)
+        ->and($html)->toContain('data-codex-page-count="3"')
         ->not->toContain('data-codex-page-article="panelless"')
         ->not->toContain('data-codex-page-article="editing-users"')
         ->not->toContain('data-codex-page-article="staff-users"');
@@ -127,8 +127,8 @@ it('adds a resource-page declaration after the resource-level entries on that pa
     $html = $this->actingAs($user, 'web')->get('/admin/users/'.$user->id.'/edit')->assertOk()->getContent();
 
     expect(finCodexDeclaredOrder($html))->toBe(['users', 'user-roles', 'stored-admin', 'editing-users'])
-        ->and($html)->toMatch('/codex-help-button__badge[^>]*>4</')
-        ->toContain('data-codex-page-count="4"')
+        ->and(finCodexButtonBadge($html, 'admin'))->toBe(4)
+        ->and($html)->toContain('data-codex-page-count="4"')
         ->not->toContain('data-codex-page-article="panelless"');
 });
 
@@ -138,8 +138,8 @@ it('answers differently per panel', function (): void {
     $html = $this->actingAs(finCodexDeclaredUser('staff'), 'staff')->get('/staff/users')->assertOk()->getContent();
 
     expect(finCodexDeclaredOrder($html))->toBe(['staff-users', 'users'])
-        ->and($html)->toMatch('/codex-help-button__badge[^>]*>2</')
-        ->toContain('data-codex-page-count="2"')
+        ->and(finCodexButtonBadge($html, 'staff'))->toBe(2)
+        ->and($html)->toContain('data-codex-page-count="2"')
         ->not->toContain('data-codex-page-article="user-roles"')
         ->not->toContain('data-codex-page-article="stored-admin"')
         ->not->toContain('data-codex-page-article="panelless"');
@@ -151,8 +151,8 @@ it('attaches a custom page declaration by class on admin', function (): void {
     $html = $this->actingAs(finCodexDeclaredUser('web'), 'web')->get('/admin/reports')->assertOk()->getContent();
 
     expect(finCodexDeclaredOrder($html))->toBe(['reports'])
-        ->and($html)->toMatch('/codex-help-button__badge[^>]*>1</')
-        ->toContain('data-codex-page-count="1"');
+        ->and(finCodexButtonBadge($html, 'admin'))->toBe(1)
+        ->and($html)->toContain('data-codex-page-count="1"');
 });
 
 it('attaches a custom page declaration by class on staff', function (): void {
@@ -161,8 +161,8 @@ it('attaches a custom page declaration by class on staff', function (): void {
     $html = $this->actingAs(finCodexDeclaredUser('staff'), 'staff')->get('/staff/reports')->assertOk()->getContent();
 
     expect(finCodexDeclaredOrder($html))->toBe(['reports'])
-        ->and($html)->toMatch('/codex-help-button__badge[^>]*>1</')
-        ->toContain('data-codex-page-count="1"');
+        ->and(finCodexButtonBadge($html, 'staff'))->toBe(1)
+        ->and($html)->toContain('data-codex-page-count="1"');
 });
 
 it('skips a declared slug that has no article', function (): void {
@@ -171,8 +171,8 @@ it('skips a declared slug that has no article', function (): void {
     $html = $this->actingAs(finCodexDeclaredUser('web'), 'web')->get('/admin/users')->assertOk()->getContent();
 
     expect(finCodexDeclaredOrder($html))->toBe(['users'])
-        ->and($html)->toMatch('/codex-help-button__badge[^>]*>1</')
-        ->toContain('data-codex-page-count="1"')
+        ->and(finCodexButtonBadge($html, 'admin'))->toBe(1)
+        ->and($html)->toContain('data-codex-page-count="1"')
         ->not->toContain('data-codex-page-article=""')
         ->not->toContain('data-codex-page-article="user-roles"');
 });

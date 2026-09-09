@@ -34,7 +34,7 @@ it('mounts the drawer and a help link under the form on every simple-layout auth
     expect(substr_count($html, 'data-fin-codex-drawer="'.$panel.'"'))->toBe(1)
         ->and(finCodexGuestLinkCount($html, $panel))->toBe(1)
         ->and($html)->toContain(__('fin-codex::fin-codex.guest.link'))
-        ->toContain('codex-help-button--labelled')
+        ->toContain('fi-link')
         ->toMatch('/<div[^>]*data-fin-codex-guest-link="'.$panel.'"[^>]*data-fin-codex-guard="'.$guard.'"/')
         ->toMatch('/<div[^>]*data-fin-codex-drawer="'.$panel.'"[^>]*data-fin-codex-guard="'.$guard.'"/')
         ->not->toContain('data-fin-codex-help-button')

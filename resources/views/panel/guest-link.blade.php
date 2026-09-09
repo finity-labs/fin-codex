@@ -1,9 +1,15 @@
-{{-- Rendered at SIMPLE_PAGE_END by HelpMount::guestLink(): the labelled core button with no badge, inside the same theme wrapper as the drawer. --}}
+{{-- Rendered at SIMPLE_PAGE_END by HelpMount::guestLink(): Filament's link component under the auth form, no badge. The anchor keeps the help-center URL for a click without JavaScript; with it, the drawer opens in place. --}}
 <div data-fin-codex-guest-link="{{ $panelId }}"
      data-fin-codex-guard="{{ $guard }}"
-     @if (! $hasDarkMode) class="light" @endif
-     x-data
-     x-bind:class="{ light: $store.theme === 'light' }"
-     style="display: contents">
-    <x-lin-codex::help-button :label="$label" :badge="false" :panel-id="$panelId" :guard="$guard" class="fin-codex-guest-link" />
+     class="fin-codex-guest-link">
+    <x-filament::link
+        :href="route('lin-codex.help-center')"
+        :icon="\Filament\Support\Icons\Heroicon::OutlinedQuestionMarkCircle"
+        size="sm"
+        data-codex-help-button
+        x-data="{}"
+        x-on:click.prevent="window.dispatchEvent(new CustomEvent('codex:open'))"
+    >
+        {{ $label }}
+    </x-filament::link>
 </div>

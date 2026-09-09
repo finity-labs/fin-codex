@@ -71,10 +71,13 @@ it('serves the stylesheet the head links', function (): void {
         ->and(file_get_contents($file->getFile()->getPathname()))->toContain('.codex-root');
 });
 
-it('binds the drawer and the guest link to the panel theme store on a login page', function (): void {
+it('binds the drawer to the panel theme store on a login page, and renders the guest link as a Filament link', function (): void {
     $html = $this->get('/admin/login')->assertOk()->getContent();
 
-    foreach (['data-fin-codex-drawer', 'data-fin-codex-guest-link'] as $attribute) {
+    expect(finCodexWrapperTag($html, 'data-fin-codex-guest-link', 'admin'))->toContain('class="fin-codex-guest-link"')
+        ->and($html)->toContain('fi-link');
+
+    foreach (['data-fin-codex-drawer'] as $attribute) {
         expect(finCodexWrapperTag($html, $attribute, 'admin'))
             ->toContain('x-bind:class="{ light: $store.theme === \'light\' }"')
             ->toContain('style="display: contents"')
@@ -83,10 +86,12 @@ it('binds the drawer and the guest link to the panel theme store on a login page
     }
 });
 
-it('binds the topbar button to the panel theme store on an app page', function (): void {
+it('binds the drawer to the panel theme store on an app page, and renders the button as a Filament icon button', function (): void {
     $html = $this->actingAs(finCodexThemeUser(), 'web')->get('/admin')->assertOk()->getContent();
 
-    foreach (['data-fin-codex-help-button', 'data-fin-codex-drawer'] as $attribute) {
+    expect(finCodexButtonTag($html, 'admin'))->toContain('fi-icon-btn');
+
+    foreach (['data-fin-codex-drawer'] as $attribute) {
         expect(finCodexWrapperTag($html, $attribute, 'admin'))
             ->toContain('x-bind:class="{ light: $store.theme === \'light\' }"')
             ->toContain('style="display: contents"')
@@ -98,7 +103,7 @@ it('binds the topbar button to the panel theme store on an app page', function (
 it('adds a static light class on a panel without dark mode', function (): void {
     $html = $this->actingAs(finCodexThemeUser(), 'web')->get('/portal')->assertOk()->getContent();
 
-    foreach (['data-fin-codex-drawer', 'data-fin-codex-help-button'] as $attribute) {
+    foreach (['data-fin-codex-drawer'] as $attribute) {
         expect(finCodexWrapperTag($html, $attribute, 'portal'))
             ->toContain('class="light"')
             ->toContain('x-bind:class="{ light: $store.theme === \'light\' }"')
@@ -109,7 +114,7 @@ it('adds a static light class on a panel without dark mode', function (): void {
 it('adds a static light class on the login page of a panel without dark mode', function (): void {
     $html = $this->get('/portal/login')->assertOk()->getContent();
 
-    foreach (['data-fin-codex-drawer', 'data-fin-codex-guest-link'] as $attribute) {
+    foreach (['data-fin-codex-drawer'] as $attribute) {
         expect(finCodexWrapperTag($html, $attribute, 'portal'))
             ->toContain('class="light"')
             ->toContain('x-bind:class="{ light: $store.theme === \'light\' }"')

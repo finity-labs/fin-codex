@@ -7,11 +7,13 @@ namespace FinityLabs\FinCodex\Pages;
 use BackedEnum;
 use Closure;
 use Filament\Actions\Action;
+use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Notifications\Notification;
 use Filament\Pages\SettingsPage;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
@@ -20,10 +22,12 @@ use Filament\Support\Icons\Heroicon;
 use FinityLabs\FinCodex\FinCodexPlugin;
 use FinityLabs\FinCodex\Traits\HasPageShieldSupport;
 use FinityLabs\LinCodex\Enums\FallbackBehaviour;
+use FinityLabs\LinCodex\Models\ArticleRevision;
 use FinityLabs\LinCodex\Models\ArticleTranslation;
 use FinityLabs\LinCodex\Settings\CodexSettings;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\HtmlString;
 use Spatie\LaravelSettings\Exceptions\MissingSettings;
 use UnitEnum;
@@ -277,6 +281,16 @@ class HelpSettings extends SettingsPage
      * on that button does nothing. A plain Action whose action() is a CLOSURE
      * renders a mountAction() handler, and the confirmation works.
      *
+     * modal() is the switch that matters, not requiresConfirmation(): Filament
+     * opens a modal for any action with a custom heading, whatever the
+     * confirmation flag says, so without it every save — an untouched form
+     * included — opened an empty "Remove a language?" box. With it, a save
+     * that removes nothing runs straight through.
+     *
+     * The modal carries one checkbox, on by default: keep the translations.
+     * Unticked, the save deletes every translation and revision in the
+     * removed languages, in the same transaction as the settings write.
+     *
      * Everything else is the vendor's button, down to its own label key and
      * mod+s, so a host's muscle memory still works.
      *
@@ -291,15 +305,64 @@ class HelpSettings extends SettingsPage
                 ->visible($this->canEdit())
                 // Only when something is going away — a confirmation on every
                 // save is a speed bump, not a warning.
-                ->requiresConfirmation(fn (): bool => $this->removedLanguages() !== [])
+                ->modal(fn (): bool => $this->removedLanguages() !== [])
+                ->requiresConfirmation()
                 ->modalHeading(__('fin-codex::fin-codex.settings.removal.heading'))
                 ->modalDescription(fn (): ?Htmlable => $this->removalDescription())
                 ->modalSubmitActionLabel(__('fin-codex::fin-codex.settings.removal.submit'))
+                ->schema([
+                    Checkbox::make('keep_translations')
+                        ->label(__('fin-codex::fin-codex.settings.removal.keep_translations'))
+                        ->helperText(__('fin-codex::fin-codex.settings.removal.keep_translations_help'))
+                        ->default(true),
+                ])
                 // A closure, never the string 'save': the string is what puts
                 // you back on a button that cannot confirm.
-                ->action(fn () => $this->save()),
+                ->action(fn (array $data) => $this->saveRemovingLanguages($data)),
         ];
     }
+
+    /**
+     * The save, plus the deletion the modal's checkbox asked for. One
+     * transaction: a validation failure inside save() (the default language
+     * being removed, say) rolls the deletion back with it, and a deletion
+     * failure leaves the settings as they were.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public function saveRemovingLanguages(array $data): void
+    {
+        $removed = $this->removedLanguages();
+        $keep = (bool) ($data['keep_translations'] ?? true);
+
+        DB::transaction(function () use ($removed, $keep): void {
+            $this->save();
+
+            if ($removed === [] || $keep) {
+                return;
+            }
+
+            ArticleRevision::query()->whereIn('locale', $removed)->delete();
+            ArticleTranslation::query()->whereIn('locale', $removed)->delete();
+        });
+
+        if ($removed !== [] && ! $keep) {
+            Notification::make()
+                ->warning()
+                ->title(__('fin-codex::fin-codex.settings.removal.deleted', ['locales' => implode(', ', $removed)]))
+                ->send();
+        }
+    }
+
+    /**
+     * The removed languages of this request, computed once: the save button's
+     * confirmation and the modal's description both read it, and they must
+     * agree — a confirmation whose description names nothing is a question
+     * nobody can answer.
+     *
+     * @var list<string>|null
+     */
+    private ?array $removedLanguagesMemo = null;
 
     /**
      * The stored language codes that are no longer in the form's live state.
@@ -307,12 +370,22 @@ class HelpSettings extends SettingsPage
      * getRawState() is the unvalidated state — literally what is about to be
      * saved — which is the only honest source for a warning that has to appear
      * before validation runs. It is the same accessor PreviewAction reads.
-     * Nothing is stored on an installation that has never saved, so the
-     * rescued fallback is an empty list and no save is ever a removal there.
+     * Codes are compared trimmed and lower-cased, so retyping "EN" over "en"
+     * is not a removal. Nothing is stored on an installation that has never
+     * saved, so the rescued fallback is an empty list and no save is ever a
+     * removal there.
      *
      * @return list<string>
      */
     public function removedLanguages(): array
+    {
+        return $this->removedLanguagesMemo ??= $this->computeRemovedLanguages();
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function computeRemovedLanguages(): array
     {
         /** @var list<string> $stored */
         $stored = rescue(
@@ -328,14 +401,23 @@ class HelpSettings extends SettingsPage
         /** @var array<mixed> $rows */
         $rows = $this->form->getRawState()['languages'] ?? [];
 
-        $current = collect($rows)->pluck('code')->filter()->all();
+        $current = collect($rows)
+            ->pluck('code')
+            ->filter()
+            ->map(static fn (mixed $code): string => mb_strtolower(trim((string) $code)))
+            ->all();
 
-        return array_values(array_diff($stored, $current));
+        $removed = array_values(array_filter(
+            $stored,
+            static fn (string $code): bool => ! in_array(mb_strtolower(trim($code)), $current, true),
+        ));
+
+        return $removed;
     }
 
     /**
-     * The languages going away, one line each with what they hold, and the
-     * sentence that says the texts are kept.
+     * The languages going away, one line each with what they hold; the
+     * checkbox beneath says what happens to the texts.
      *
      * The lines are escaped and joined with <br> rather than newlines, because
      * a modal description renders as one paragraph and three languages on one
@@ -357,8 +439,6 @@ class HelpSettings extends SettingsPage
                 'count' => self::translationCount($code),
             ]);
         }
-
-        $lines[] = (string) __('fin-codex::fin-codex.settings.removal.kept');
 
         return new HtmlString(implode('<br>', array_map(fn (string $line): string => e($line), $lines)));
     }

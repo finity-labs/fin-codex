@@ -67,3 +67,44 @@ function enableRevisions(bool $enabled): void
     $settings->revisions_enabled = $enabled;
     $settings->save();
 }
+
+/**
+ * The number on the help button's badge for one panel, null when the button
+ * carries none. The button is Filament's icon button: the badge sits in its
+ * fi-icon-btn-badge-ctn container, and only the text matters here.
+ */
+function finCodexButtonBadge(string $html, string $panel): ?int
+{
+    $start = strpos($html, 'data-fin-codex-help-button="'.$panel.'"');
+
+    if ($start === false) {
+        return null;
+    }
+
+    $button = substr($html, $start, (int) strpos($html, '</a>', $start) - $start);
+
+    if (preg_match('/fi-icon-btn-badge-ctn"[^>]*>(.*?)<\/div>/s', $button, $matches) !== 1) {
+        return null;
+    }
+
+    return (int) trim(strip_tags($matches[1]));
+}
+
+/**
+ * The opening <a ...> tag of the help button for one panel: Filament's icon
+ * button, whose attribute order is the component's, so assertions read the
+ * whole tag rather than a fixed sequence.
+ */
+function finCodexButtonTag(string $html, string $panel): string
+{
+    $start = strpos($html, 'data-fin-codex-help-button="'.$panel.'"');
+
+    if ($start === false) {
+        test()->fail("No help button for the {$panel} panel in the page.");
+    }
+
+    $open = (int) strpos($html, '<a', $start);
+    $close = (int) strpos($html, '>', $open);
+
+    return substr($html, $open, $close - $open + 1);
+}

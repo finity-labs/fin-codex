@@ -83,8 +83,8 @@ it('shows an authenticated article to a user signed in on the panel\'s own guard
 
     $html = $this->actingAs($user, $guard)->get($path)->assertOk()->getContent();
 
-    expect($html)->toMatch('/codex-help-button__badge[^>]*>1</')
-        ->toContain('data-codex-page-count="1"')
+    expect(finCodexButtonBadge($html, $panel))->toBe(1)
+        ->and($html)->toContain('data-codex-page-count="1"')
         ->toContain('data-codex-page-article="dash-secret"')
         ->toContain('Dashboard secret');
 })->with([

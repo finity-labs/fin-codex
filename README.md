@@ -86,7 +86,9 @@ Register it on as many panels as you like. Each panel gets its own options, its 
 
 ### Styles
 
-There is nothing to do. The drawer's stylesheet arrives through lin-codex's own hashed route, injected into `<head>` on every panel page. You do not need a custom Filament theme, and you do not need a `@source` line if you have one.
+There is nothing to do. The help button, the guest link and the drawer's chrome — its header buttons, search field, tabs and footer link — are Filament's own components, so they follow your panel's colours, radii and font as any other control does. Article content inside the drawer is rendered by lin-codex's partials and styled by its stylesheet, which arrives through the core's hashed route, injected into `<head>` on every panel page; fin-codex remaps that stylesheet's tokens onto the panel's grey and primary scales for light and dark mode. You do not need a custom Filament theme, and you do not need a `@source` line if you have one.
+
+The core drawer view stays what a page outside Filament gets. Inside a panel, fin-codex renders its own `Livewire\HelpDrawer`, a subclass of the core component that only names a different view, so every property, action and the Alpine glue are the core's.
 
 ## Plugin options
 
@@ -99,7 +101,7 @@ FinCodexPlugin::make()
     ->helpButton()                             // show the topbar button (default: true)
     ->guestDrawer()                            // drawer and link on simple-layout pages (default: true)
     ->globalSearch()                           // Help category in the panel search (default: false)
-    ->helpButtonRenderHook(PanelsRenderHook::TOPBAR_END)
+    ->helpButtonRenderHook(PanelsRenderHook::USER_MENU_AFTER)
     ->navigationGroup('Help')
     ->navigationSort(90)
     ->policyNamespace('App\\Policies')
@@ -115,7 +117,7 @@ FinCodexPlugin::make()
 | `helpButton(bool\|Closure)` | `true` | Renders the topbar help button. `false` removes the button only — the drawer, its shortcut and field hints stay. |
 | `guestDrawer(bool\|Closure)` | `true` | The "Need help?" link and the drawer on simple-layout pages: login, register, password reset, email verification and any host `SimplePage`. `false` removes all three there; signed-in pages are unaffected. |
 | `globalSearch(bool\|Closure)` | `false` | Appends a Help category to the panel's global search results. See [Global search](#global-search). |
-| `helpButtonRenderHook(string\|Closure)` | `TOPBAR_END` | Where the button renders. Set it explicitly and Codex honours it as given. Leave it alone and the button goes to the topbar, falling back to `SIDEBAR_FOOTER` on a panel with `->topbar(false)`. |
+| `helpButtonRenderHook(string\|Closure)` | `USER_MENU_AFTER` | Where the button renders. Set it explicitly and Codex honours it as given. Leave it alone and the button sits beside the user menu: in the topbar's end group next to the notification bell, or in the sidebar footer on a panel with `->topbar(false)`. A panel with `->userMenu(false)` gets it at `TOPBAR_END`, or `SIDEBAR_FOOTER` without a topbar. Under SPA mode Filament persists the topbar's end group across navigations, so the badge there keeps the count of the first page; name `TOPBAR_END` if you want it live. |
 | `navigationGroup(string\|UnitEnum\|Closure\|null)` | `NavigationGroup::Help` | The navigation group for the resource and both pages. The default enum's label follows the panel locale. |
 | `navigationSort(int\|Closure\|null)` | `null` | Sort for the article resource. Help settings files at `+1` and Help coverage at `+2`, so `->navigationSort(90)` gives 90, 91 and 92. Leave it null and Filament sorts the group by label. |
 | `policyNamespace(string)` | `'App\Policies'` | Where Codex looks for your own `ArticlePolicy`. See [Authorization](#authorization). |
@@ -312,7 +314,7 @@ Deleting an *article* leaves its `codex_media` rows with a null `article_id`. Th
 
 **Nothing is written until you press Save.** A fresh install opens on the packaged defaults — one language derived from `app.locale`, revisions off, ten kept — and the settings rows appear on the first save. The page also works before the settings migration has run: a missing row and a missing table fall back the same way.
 
-**Removing a language keeps its translations.** Dropping a code takes the language out of the editor tabs and out of the reader's fallback chain and deletes nothing. Add the code back and every text returns exactly as it was. The confirmation names each language going away with how many texts it holds, counted live from what the form says right now.
+**Removing a language asks what to do with its texts.** Dropping a code opens a confirmation that names each language going away with how many translations it holds, counted live from what the form says right now, and one checkbox: *Keep the translations*, ticked by default. Ticked, the language leaves the editor tabs and the reader's fallback chain and nothing is deleted; add the code back and every text returns exactly as it was. Unticked, every translation and revision in those languages is deleted in the same transaction as the settings write. A save that removes no language never asks.
 
 **The current default language is the one removal the page refuses.** It reports twice — once on the language list and once on the default-language select — because those are the two fields that have to agree. Pick a different default first and the same edit goes through in one save.
 

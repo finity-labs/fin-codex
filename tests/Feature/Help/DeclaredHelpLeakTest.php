@@ -102,7 +102,7 @@ it('hides an unpublished declared article without warning about it', function ()
     expect($html)->toContain('data-codex-page-count="0"')
         ->not->toContain('data-codex-page-article')
         ->not->toContain('Draft body.')
-        ->not->toMatch('/codex-help-button__badge/')
+        ->and(finCodexButtonBadge($html, 'admin'))->toBeNull()
         ->and(implode("\n", $messages))->not->toContain('article users for')
         ->toContain('article user-roles for panel admin');
 });

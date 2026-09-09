@@ -1,6 +1,7 @@
 <?php
 
 use FinityLabs\FinCodex\Tests\Fixtures\User;
+use Illuminate\Support\Js;
 
 /*
  * PANEL-07's spec, one panel per test method (see PanelsTest). No locale prop
@@ -59,9 +60,12 @@ it('labels the topbar button and its tooltip in the panel locale', function (str
 
     $html = $this->actingAs(finCodexLocaleUser(), 'web')->get('/admin')->assertOk()->getContent();
 
-    expect($html)->toContain('aria-label="'.$help.'"')
-        ->toContain('x-tooltip="{ content: &#039;'.$help.'&#039;, theme: $store.theme }"')
-        ->toContain('&quot;locale&quot;:&quot;'.$locale.'&quot;');
+    $button = finCodexButtonTag($html, 'admin');
+
+    expect($button)->toContain('aria-label="'.$help.'"')
+        // Filament's @js() escapes non-ASCII, so the tooltip carries the same encoding.
+        ->toContain('content: '.Js::from($help)->toHtml())
+        ->and($html)->toContain('&quot;locale&quot;:&quot;'.$locale.'&quot;');
 
     if ($locale !== 'en') {
         // Scoped to the button's own element: since Phase 5 the sidebar also
@@ -69,7 +73,7 @@ it('labels the topbar button and its tooltip in the panel locale', function (str
         // is the fixture's literal navigationGroup('Help') option. A host
         // string is never translated by fin-codex, so a page-wide search for
         // aria-label="Help" would now find the group, not a stale button.
-        expect($html)->not->toMatch('/data-codex-help-button[^>]*aria-label="Help"/');
+        expect($button)->not->toContain('aria-label="Help"');
     }
 })->with([
     ['en', 'Help'],

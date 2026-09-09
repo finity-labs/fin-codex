@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-09
+
+### Fixed
+
+- Saving Help settings opened an empty "Remove a language?" box on every save, an untouched form included: Filament opens a modal for any action with a custom heading, whatever the confirmation flag says. The save now only opens the modal when a language is actually being removed.
+
+### Added
+
+- A *Keep the translations* checkbox in the language-removal confirmation, ticked by default. Unticked, the save deletes every translation and revision in the removed languages in the same transaction as the settings write, and says so in a notification.
+
+### Changed
+
+- The help button is Filament's own icon button, in the primary colour, sized like the notification bell, with the page's article count as its badge, and it now sits beside the user menu by default: `helpButtonRenderHook()` defaults to `USER_MENU_AFTER`, which Filament renders in the topbar's end group next to the notification bell, or in the sidebar footer on a panel without a topbar. `TOPBAR_END` — the old default — landed after that group closed. The fallbacks only apply to a panel with no user menu.
+- The drawer is presented with Filament's schema components. fin-codex renders `Livewire\HelpDrawer`, a subclass of the core component that keeps every property, action and the Alpine glue and adds three schemas — `header()`, `content()` and `footer()` — built from icon-button and link actions, a live search `TextInput`, `Tabs`, `Section`s for tree groups and the table of contents, `Text` and `Html`; a host overrides any of the three on a subclass. Only the panel, the overlay, the scrolling body and the lightbox stay in Blade. The rendered article body is still styled by the core stylesheet, whose tokens are remapped onto the panel's grey and primary scales for light and dark mode. The guest link on simple-layout pages is a Filament link.
+- Requires lin-codex ^0.2.1 for the overridable drawer view.
+
 ## [0.1.1] - 2026-09-08
 
 ### Fixed

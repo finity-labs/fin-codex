@@ -6,8 +6,8 @@ namespace FinityLabs\FinCodex\Panel;
 
 use Filament\Panel;
 use FinityLabs\FinCodex\FinCodexPlugin;
+use FinityLabs\LinCodex\View\PageHelpResolver;
 use Illuminate\Support\HtmlString;
-use Illuminate\Support\Js;
 
 /**
  * The bodies of the render hooks FinCodexPlugin::register() wires. Every body
@@ -20,7 +20,10 @@ use Illuminate\Support\Js;
  */
 final class HelpMount
 {
-    public function __construct(private readonly CurrentPage $currentPage) {}
+    public function __construct(
+        private readonly CurrentPage $currentPage,
+        private readonly PageHelpResolver $pageHelp,
+    ) {}
 
     /**
      * The core stylesheet link followed by the accent, font and guest-link
@@ -35,9 +38,9 @@ final class HelpMount
      * The topbar (or sidebar-footer) button: skipped when the option is off
      * or no panel is current; badge-less when the request is not a page
      * render (a refresh-topbar update), which wire:ignore keeps invisible on
-     * the client. The tooltip label stays unescaped Unicode (Súgó, not
-     * S\u00fag\u00f3): Blade escapes the attribute, so only readability is
-     * at stake.
+     * the client. The badge is the page's article count from the same
+     * request-scoped resolver the drawer's mount() reads, so the two always
+     * agree.
      */
     public function button(FinCodexPlugin $plugin, Panel $panel): HtmlString
     {
@@ -47,15 +50,15 @@ final class HelpMount
             return new HtmlString('');
         }
 
-        $label = (string) __('fin-codex::fin-codex.button.tooltip');
+        $pageClass = $identity->pageClass();
 
         return $this->render('fin-codex::panel.button', [
-            'pageClass' => $identity->pageClass(),
+            'pageClass' => $pageClass,
             'resourceClass' => $identity->resourceClass,
             'panelId' => $identity->panelId,
             'guard' => $identity->guard,
-            'hasDarkMode' => $panel->hasDarkMode(),
-            'tooltip' => '{ content: '.Js::from($label, JSON_UNESCAPED_UNICODE).', theme: $store.theme }',
+            'tooltip' => (string) __('fin-codex::fin-codex.button.tooltip'),
+            'badge' => $pageClass === null ? 0 : $this->pageHelp->for($pageClass, $identity->panelId, null, $identity->guard)->count(),
         ]);
     }
 
@@ -75,7 +78,6 @@ final class HelpMount
         return $this->render('fin-codex::panel.guest-link', [
             'panelId' => $identity->panelId,
             'guard' => $identity->guard,
-            'hasDarkMode' => $panel->hasDarkMode(),
             'label' => (string) __('fin-codex::fin-codex.guest.link'),
         ]);
     }

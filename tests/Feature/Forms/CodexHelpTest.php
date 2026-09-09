@@ -102,7 +102,8 @@ it('renders the hint as an icon button with the title tooltip on a resource form
         ->toContain('fi-icon-btn')
         ->toContain('fi-size-sm')
         ->not->toContain('wire:click')
-        ->and(substr_count($html, 'fi-ac-icon-btn-action'))->toBe(1)
+        // Counted by the hint's own label: the drawer's header carries Filament icon-button actions too.
+        ->and(substr_count($html, 'aria-label="Open help"'))->toBe(1)
         ->and($html)->toContain('x-on:codex:open.window');
 });
 
@@ -160,7 +161,7 @@ it('renders no hint when the viewer may not read the article', function (callabl
     $html = $this->actingAs(finCodexHintUser('web@example.com'), 'web')
         ->get('/admin/users/create')->assertOk()->getContent();
 
-    expect($html)->not->toContain('fi-ac-icon-btn-action')
+    expect($html)->not->toContain('aria-label="Open help"')
         ->not->toContain('/help/')
         ->toContain('data.name');
 })->with([
