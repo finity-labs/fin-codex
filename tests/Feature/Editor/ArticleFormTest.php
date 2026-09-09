@@ -6,10 +6,12 @@ use Filament\Forms\Components\Select;
 use Filament\Infolists\Components\Entry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Component;
+use FinityLabs\FinCodex\Editor\ArticlePickerTable;
 use FinityLabs\FinCodex\Editor\ArticleWriter;
 use FinityLabs\FinCodex\Resources\ArticleResource\Pages\CreateArticle;
 use FinityLabs\FinCodex\Resources\ArticleResource\Pages\EditArticle;
 use FinityLabs\FinCodex\Tests\Fixtures\User;
+use FinityLabs\FinModalTableSelect\Components\ModalTableSelect;
 use FinityLabs\LinCodex\Enums\ArticleFormat;
 use FinityLabs\LinCodex\Enums\RevisionReason;
 use FinityLabs\LinCodex\Enums\Visibility;
@@ -483,7 +485,7 @@ it('offers outlined heroicons and stores the heroicon-o- name', function (): voi
     expect(Article::query()->where('slug', 'users')->sole()->icon)->toBe('heroicon-o-academic-cap');
 });
 
-it('lists related articles by title with the slug as hint and excludes the article itself', function (): void {
+it('offers related articles by title and slug in a modal picker and excludes the article itself', function (): void {
     useFixtureDocs();
     $user = finCodexFormUser();
 
@@ -498,15 +500,19 @@ it('lists related articles by title with the slug as hint and excludes the artic
     $component = Livewire::test(EditArticle::class, ['record' => $billing->getRouteKey()]);
     $related = finCodexFormComponent($component, 'related');
 
-    expect($related)->toBeInstanceOf(Select::class);
+    expect($related)->toBeInstanceOf(ModalTableSelect::class);
 
-    /** @var Select $related */
-    $options = $related->getOptions();
+    /** @var ModalTableSelect $related */
+    $rows = $related->getStandaloneRecordsIndex();
 
-    expect($options)->toHaveKey('users/roles', 'Roles (users/roles)')
-        ->and($options)->toHaveKey('intro', 'Introduction (intro)')
-        ->and($options)->toHaveKey('users', 'Users (users)')
-        ->and($options)->not->toHaveKey('billing');
+    expect($related->isMultiple())->toBeTrue()
+        ->and($related->getTableConfiguration())->toBe(ArticlePickerTable::class)
+        ->and($rows['users/roles']['title'])->toBe('Roles')
+        ->and($rows['users/roles']['slug'])->toBe('users/roles')
+        ->and($rows['users/roles']['source'])->toBe('file')
+        ->and($rows['intro']['title'])->toBe('Introduction')
+        ->and($rows['users']['title'])->toBe('Users')
+        ->and($rows)->not->toHaveKey('billing');
 
     $component->fillForm(['related' => ['users/roles', 'intro'], 'keywords' => ['a', 'b']])
         ->call('save')
@@ -561,4 +567,36 @@ it('round-trips format, published and visibility and keeps an HTML article on HT
         ->assertHasNoFormErrors();
 
     expect($legacy->fresh()->format)->toBe(ArticleFormat::Html);
+});
+
+it('lists related articles in the panel language, falling back to the default language', function (): void {
+    useFixtureDocs();
+    finCodexFormUseLanguages(['en', 'de']);
+    $user = finCodexFormUser();
+
+    $billing = app(ArticleWriter::class)->create(finCodexFormState([
+        'slug' => 'billing',
+        'translations' => [
+            'en' => ['title' => 'Billing', 'excerpt' => null, 'body' => 'Billing body.'],
+            'de' => ['title' => 'Abrechnung', 'excerpt' => null, 'body' => 'Abrechnung.'],
+        ],
+    ]), $user->id);
+    $zebra = app(ArticleWriter::class)->create(finCodexFormState([
+        'slug' => 'zebra',
+        'translations' => ['en' => ['title' => 'Zebra', 'excerpt' => null, 'body' => 'Zebra body.']],
+    ]), $user->id);
+
+    forgetHelpMemo();
+    $this->usesPanel('admin', $user);
+    app()->setLocale('de');
+
+    /** @var ModalTableSelect $related */
+    $related = finCodexFormComponent(Livewire::test(EditArticle::class, ['record' => $zebra->getRouteKey()]), 'related');
+    $rows = $related->getStandaloneRecordsIndex();
+
+    expect($rows['billing']['title'])->toBe('Abrechnung')
+        ->and($rows['intro']['title'])->toBe('Introduction')
+        ->and($related->getRecordDisplayLabel($rows['billing']))->toBe('Abrechnung');
+
+    app()->setLocale('en');
 });

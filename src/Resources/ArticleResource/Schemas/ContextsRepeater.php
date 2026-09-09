@@ -4,19 +4,22 @@ declare(strict_types=1);
 
 namespace FinityLabs\FinCodex\Resources\ArticleResource\Schemas;
 
+use Filament\Actions\Action;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Repeater\TableColumn;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
-use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Components\View;
 use FinityLabs\FinCodex\Editor\ContextPicker;
+use FinityLabs\FinCodex\Editor\PageClassPickerTable;
+use FinityLabs\FinCodex\Editor\RoutePickerTable;
 use FinityLabs\FinCodex\Help\Declaration;
 use FinityLabs\FinCodex\Help\DeclaredContexts;
+use FinityLabs\FinModalTableSelect\Components\ModalTableSelect;
 use FinityLabs\LinCodex\Enums\ContextType;
 use FinityLabs\LinCodex\Models\Article;
 use FinityLabs\LinCodex\Models\ArticleContext;
@@ -67,10 +70,12 @@ final class ContextsRepeater
     }
 
     /**
-     * Four columns: panel, type, key-or-pattern, resolved label. Filament's
-     * table layout pairs one column with one schema component in order and
-     * counts an invisible component as a filled cell, so the key and the
-     * pattern live in one Group to keep the count at four.
+     * Three columns: panel, type, key-or-pattern. Filament's table layout
+     * pairs one column with one schema component in order and counts an
+     * invisible component as a filled cell, so the key and the pattern live
+     * in one Group to keep the count at three. The picked page names itself
+     * — label on top, class or route name and path underneath — so there is
+     * no separate label cell.
      */
     public static function make(): Repeater
     {
@@ -81,10 +86,10 @@ final class ContextsRepeater
                 TableColumn::make(__('fin-codex::fin-codex.editor.contexts.panel')),
                 TableColumn::make(__('fin-codex::fin-codex.editor.contexts.type')),
                 TableColumn::make(__('fin-codex::fin-codex.editor.contexts.key')),
-                TableColumn::make(__('fin-codex::fin-codex.editor.contexts.label')),
             ])
             ->schema([
                 Select::make('panel_id')
+                    ->native(false)->preload()->searchable(false)
                     ->label(__('fin-codex::fin-codex.editor.contexts.panel'))
                     ->options(fn (): array => app(ContextPicker::class)->panels())
                     ->default(ContextPicker::ANY_PANEL)
@@ -95,6 +100,7 @@ final class ContextsRepeater
                     }),
 
                 Select::make('type')
+                    ->native(false)->preload()->searchable(false)
                     ->label(__('fin-codex::fin-codex.editor.contexts.type'))
                     ->options(fn (): array => app(ContextPicker::class)->types())
                     ->default(ContextType::PageClass->key())
@@ -106,10 +112,25 @@ final class ContextsRepeater
                     }),
 
                 Group::make([
-                    Select::make('key')
+                    // A modal table, not a select: a class or route key needs
+                    // its label, its path and its panel beside it to be
+                    // picked with confidence. The rows are arrays from
+                    // ContextPicker, scoped by the row's own panel and type.
+                    ModalTableSelect::make('key')
                         ->label(__('fin-codex::fin-codex.editor.contexts.key'))
-                        ->searchable()
-                        ->options(fn (Get $get): array => self::keyOptions($get))
+                        ->tableConfiguration(fn (Get $get): string => self::isRoute($get) ? RoutePickerTable::class : PageClassPickerTable::class)
+                        ->standaloneRecords(fn (Get $get): array => self::keyRows($get), titleAttribute: 'label')
+                        ->stackedList()
+                        ->stackedListPrimary('label')
+                        ->stackedListPrimaryWrapped()
+                        ->stackedListSecondary(fn (array $record): ?string => self::keySecondary($record))
+                        ->stackedListSecondaryWrapped()
+                        ->selectAction(fn (Action $action, Get $get): Action => $action
+                            ->iconButton()
+                            ->modalHeading(__(self::isRoute($get)
+                                ? 'fin-codex::fin-codex.editor.contexts.pick_route'
+                                : 'fin-codex::fin-codex.editor.contexts.pick_page')))
+                        ->emptyStateSelectButton()
                         ->visible(fn (Get $get): bool => ! self::isUrl($get))
                         ->required(fn (Get $get): bool => ! self::isUrl($get)),
 
@@ -120,15 +141,6 @@ final class ContextsRepeater
                         ->visible(fn (Get $get): bool => self::isUrl($get))
                         ->required(fn (Get $get): bool => self::isUrl($get)),
                 ])->columnSpan(1),
-
-                TextEntry::make('label')
-                    ->label(__('fin-codex::fin-codex.editor.contexts.label'))
-                    ->hiddenLabel()
-                    ->placeholder('—')
-                    ->state(fn (Get $get): ?string => self::rowLabel($get))
-                    ->extraAttributes(fn (Get $get): array => [
-                        'data-fin-codex-context-label' => self::rowLabel($get) ?? '',
-                    ]),
             ])
             ->reorderable()
             ->addActionLabel(__('fin-codex::fin-codex.editor.contexts.add'))
@@ -225,31 +237,56 @@ final class ContextsRepeater
     }
 
     /**
-     * @return array<string, string>
+     * The picker rows for the row's panel and type; a url row has none.
+     *
+     * @return list<array<string, mixed>>
      */
-    private static function keyOptions(Get $get): array
+    private static function keyRows(Get $get): array
     {
         $picker = app(ContextPicker::class);
         $panel = self::panel($get);
 
         return match (self::type($get)) {
-            ContextType::PageClass->key() => $picker->classKeys($panel),
-            ContextType::Route->key() => $picker->routeKeys($panel),
+            ContextType::PageClass->key() => $picker->classRows($panel),
+            ContextType::Route->key() => $picker->routeRows($panel),
             default => [],
         };
     }
 
-    private static function rowLabel(Get $get): ?string
+    /**
+     * The lines under the picked page's label: the class for a `class:` row
+     * (ContextPicker::classRows() marks those with a kind), the route name
+     * and its path on two lines for a `route:` row — both wrap rather than
+     * truncate, because a class or route name is long and the cell is not.
+     * A key the application no longer registers comes back as a bare
+     * stand-in row whose label is the key itself, and then there is
+     * nothing to add.
+     *
+     * @param  array<string, mixed>  $record
+     */
+    private static function keySecondary(array $record): ?string
     {
-        $type = self::type($get);
-        $raw = $get($type === ContextType::Url->key() ? 'url' : 'key');
+        $key = $record['key'] ?? null;
 
-        return app(ContextPicker::class)->label(self::panel($get), $type, is_string($raw) ? $raw : null);
+        if (! is_string($key) || $key === '' || ! isset($record['label'])) {
+            return null;
+        }
+
+        $uri = $record['uri'] ?? null;
+
+        return isset($record['kind']) || ! is_string($uri) || $uri === ''
+            ? $key
+            : $key."\n".$uri;
     }
 
     private static function isUrl(Get $get): bool
     {
         return self::type($get) === ContextType::Url->key();
+    }
+
+    private static function isRoute(Get $get): bool
+    {
+        return self::type($get) === ContextType::Route->key();
     }
 
     private static function type(Get $get): ?string

@@ -23,6 +23,7 @@ use FinityLabs\FinCodex\Tests\Fixtures\PlainPanelProvider;
 use FinityLabs\FinCodex\Tests\Fixtures\PortalPanelProvider;
 use FinityLabs\FinCodex\Tests\Fixtures\StaffPanelProvider;
 use FinityLabs\FinCodex\Tests\Fixtures\User;
+use FinityLabs\FinModalTableSelect\FinModalTableSelectServiceProvider;
 use FinityLabs\LinCodex\LinCodexServiceProvider;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
@@ -102,6 +103,7 @@ class TestCase extends Orchestra
             WidgetsServiceProvider::class,
             LivewireServiceProvider::class,
             LaravelSettingsServiceProvider::class,
+            FinModalTableSelectServiceProvider::class,
             LinCodexServiceProvider::class,
             FinCodexServiceProvider::class,
             AdminPanelProvider::class,

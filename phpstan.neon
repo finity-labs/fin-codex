@@ -11,8 +11,3 @@ parameters:
         -
             identifier: trait.unused
             path: src/Help/WithHelp.php
-        # Shield is an optional dependency (composer "suggest"); the trait
-        # references its classes behind class_exists(). Drop this line if
-        # bezhansalleh/filament-shield ever enters require-dev — an ignore
-        # that matches nothing fails the run just as loudly.
-        - '#BezhanSalleh\\FilamentShield\\#'

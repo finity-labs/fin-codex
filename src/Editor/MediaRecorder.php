@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace FinityLabs\FinCodex\Editor;
 
+use Carbon\CarbonInterface;
 use FinityLabs\LinCodex\Models\Article;
 use FinityLabs\LinCodex\Models\Media;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use RuntimeException;
 
@@ -19,11 +22,13 @@ use RuntimeException;
  * boot, so a host that changes them is honoured without a restart. fin-codex
  * writes no config of its own here; it only reads the core's (Pitfall 9).
  *
- * Filament validates the upload against `fileAttachmentsAcceptedFileTypes()`
- * *before* `saveUploadedFileAttachmentUsing()` is ever called, so `store()`
- * never sees anything but one of the five accepted image types. An SVG is
- * refused there, silently and on purpose: it is a script container, not a
- * screenshot.
+ * Two doors lead here. The body editor's drop zone, which Filament validates
+ * against `fileAttachmentsAcceptedFileTypes()` before
+ * `saveUploadedFileAttachmentUsing()` is ever called, so it only ever hands
+ * over one of the five raster image types — an SVG is refused there,
+ * silently and on purpose: it is a script container, not a screenshot. And
+ * the Media tab's upload action, validated against the plugin's document
+ * types, for the PDFs and office files an article links to.
  *
  * The row is written for every upload, with the panel user in `uploaded_by`.
  * `article_id` follows the page: on edit the record is injected into the
@@ -52,7 +57,8 @@ final class MediaRecorder
     public function store(TemporaryUploadedFile $file, ?Article $article, ?int $userId): string
     {
         $disk = $this->disk();
-        $path = $file->store($this->directory(), $disk);
+        $directory = $this->directory();
+        $path = $file->storeAs($directory, $this->storedName($file, $disk, $directory), $disk);
 
         if (! is_string($path) || $path === '') {
             throw new RuntimeException("The help image could not be stored on the [{$disk}] disk.");
@@ -71,6 +77,32 @@ final class MediaRecorder
         ]);
 
         return $path;
+    }
+
+    /**
+     * The name the file is stored under: its own, not a hash, so the URL an
+     * article links and the name a browser saves it as both read like the
+     * upload. Slugified, because the URL lands inside Markdown, where a
+     * space ends the link; the extension is the upload's, lower-cased. A
+     * second file of the same name in the same directory gets -2, -3.
+     */
+    private function storedName(TemporaryUploadedFile $file, string $disk, string $directory): string
+    {
+        $original = $file->getClientOriginalName();
+        $base = Str::slug(pathinfo($original, PATHINFO_FILENAME));
+        $base = $base === '' ? 'file' : $base;
+        $extension = strtolower(pathinfo($original, PATHINFO_EXTENSION));
+        $extension = $extension === '' ? strtolower((string) $file->guessExtension()) : $extension;
+        $suffix = $extension === '' ? '' : '.'.$extension;
+
+        $storage = Storage::disk($disk);
+        $name = $base.$suffix;
+
+        for ($attempt = 2; $storage->exists($directory.'/'.$name); $attempt++) {
+            $name = $base.'-'.$attempt.$suffix;
+        }
+
+        return $name;
     }
 
     /**
@@ -142,10 +174,23 @@ final class MediaRecorder
         return (is_string($disk) && $disk !== '') ? $disk : 'public';
     }
 
-    private function directory(): string
+    /**
+     * The directory uploads land in: `lin-codex.media.directory` with its
+     * date placeholders expanded — `{Y}`, `{m}` and `{d}` become the
+     * upload's year, month and day, so a busy site's images spread over
+     * `codex/2026/09` rather than one flat folder. A row keeps the path it
+     * was stored under, so changing the setting moves nothing.
+     */
+    public function directory(?CarbonInterface $at = null): string
     {
         $directory = config('lin-codex.media.directory', 'codex');
+        $directory = (is_string($directory) && $directory !== '') ? $directory : 'codex';
+        $at ??= Carbon::now();
 
-        return (is_string($directory) && $directory !== '') ? $directory : 'codex';
+        return trim(strtr($directory, [
+            '{Y}' => $at->format('Y'),
+            '{m}' => $at->format('m'),
+            '{d}' => $at->format('d'),
+        ]), '/');
     }
 }

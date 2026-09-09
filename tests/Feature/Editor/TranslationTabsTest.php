@@ -16,8 +16,9 @@ use Livewire\Livewire;
  * The badges are read off the rendered markup rather than off the schema,
  * because a badge closure that never runs would still return the right
  * string when called by hand. Every row drives CreateArticle or EditArticle,
- * so the missing verdict comes from live form state and the outdated one
- * from the stored timestamps, exactly as on the page.
+ * so the missing verdict comes from live form state, exactly as on the page.
+ * There is no outdated badge: a default language saved after a translation
+ * leaves that translation's tab unbadged.
  */
 
 /** A fixture user signed in on the panel under test. */
@@ -125,7 +126,7 @@ it('badges a non-default tab missing until title and body are filled, never the 
         ->and(finCodexTabsBadge($html, 'en'))->toBeNull();
 });
 
-it('badges a tab outdated when the default was saved later and clears it on save', function (): void {
+it('shows no badge on a filled tab whose default was saved later', function (): void {
     finCodexTabsUseLanguages(['en', 'de']);
     $this->usesPanel('admin', finCodexTabsUser());
 
@@ -148,24 +149,12 @@ it('badges a tab outdated when the default was saved later and clears it on save
 
     $html = Livewire::test(EditArticle::class, ['record' => $article->getRouteKey()])->html();
 
-    expect(finCodexTabsBadge($html, 'de'))->toBe(__('fin-codex::fin-codex.editor.state.outdated'))
-        ->and(finCodexTabsBadgeClasses($html, 'de'))->toContain('fi-color-warning')
-        ->and(finCodexTabsBadge($html, 'en'))->toBeNull();
-
-    $this->travelTo(now()->addMinute());
-
-    Livewire::test(EditArticle::class, ['record' => $article->getRouteKey()])
-        ->fillForm(['translations' => ['de' => ['title' => 'Benutzer v2', 'body' => 'neu']]])
-        ->call('save')
-        ->assertHasNoFormErrors();
-
-    $html = Livewire::test(EditArticle::class, ['record' => $article->getRouteKey()])->html();
-
     expect(finCodexTabsBadge($html, 'de'))->toBeNull()
+        ->and(finCodexTabsBadgeClasses($html, 'de'))->not->toContain('fi-color-warning')
         ->and(finCodexTabsBadge($html, 'en'))->toBeNull();
 });
 
-it('never marks the default tab outdated', function (): void {
+it('shows no badge on either tab when the default language is the older one', function (): void {
     finCodexTabsUseLanguages(['en', 'de'], 'de');
     $this->usesPanel('admin', finCodexTabsUser());
 

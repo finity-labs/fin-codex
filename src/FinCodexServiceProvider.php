@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace FinityLabs\FinCodex;
 
 use Filament\Forms\Components\Field;
-use FinityLabs\FinCodex\Auth\ArticlePolicyRegistration;
 use FinityLabs\FinCodex\Coverage\CoverageReport;
 use FinityLabs\FinCodex\Coverage\SourceWarnings;
 use FinityLabs\FinCodex\Forms\CodexHelp;
@@ -14,6 +13,8 @@ use FinityLabs\FinCodex\Help\DeclaredContexts;
 use FinityLabs\FinCodex\Help\DeclaredContextsSource;
 use FinityLabs\FinCodex\Livewire\HelpDrawer;
 use FinityLabs\FinCodex\Panel\CurrentPage;
+use FinityLabs\FinCodex\Policies\ArticlePolicy;
+use FinityLabs\FinSupport\Auth\PolicyRegistrar;
 use FinityLabs\LinCodex\Contracts\ContentSource;
 use FinityLabs\LinCodex\Models\Article;
 use FinityLabs\LinCodex\Models\ArticleContext;
@@ -127,14 +128,20 @@ class FinCodexServiceProvider extends PackageServiceProvider
     }
 
     /**
-     * Give lin-codex's Article a policy while no panel is current: the
-     * default panel's namespace when the plugin is on it, App\Policies
-     * otherwise. FinCodexPlugin::boot() registers again with the booting
-     * panel's own namespace; Auth\ArticlePolicyRegistration explains why
-     * both calls exist.
+     * Give lin-codex's Article a policy while no panel is current: the host's
+     * at {namespace}\ArticlePolicy when it exists, the shipped one otherwise,
+     * with the namespace read from the default panel's plugin (App\Policies
+     * when the plugin is not there). FinCodexPlugin::boot() registers again
+     * with the booting panel's own namespace, which is what makes the option
+     * per panel; fin-support's PolicyRegistrar explains the two calls.
      */
     protected function registerPolicies(): void
     {
-        ArticlePolicyRegistration::register(ArticlePolicyRegistration::defaultNamespace());
+        self::registerArticlePolicy(PolicyRegistrar::namespaceOf(FinCodexPlugin::ID));
+    }
+
+    public static function registerArticlePolicy(string $namespace): void
+    {
+        PolicyRegistrar::register($namespace, [Article::class => 'ArticlePolicy'], [Article::class => ArticlePolicy::class]);
     }
 }

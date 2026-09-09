@@ -15,9 +15,10 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use FinityLabs\FinCodex\Editor\ArticlePicker;
+use FinityLabs\FinCodex\Editor\ArticlePickerTable;
 use FinityLabs\FinCodex\Editor\SlugRules;
-use FinityLabs\LinCodex\Contracts\ContentSource;
-use FinityLabs\LinCodex\Data\ArticleData;
+use FinityLabs\FinModalTableSelect\Components\ModalTableSelect;
 use FinityLabs\LinCodex\Enums\ArticleFormat;
 use FinityLabs\LinCodex\Enums\Visibility;
 use FinityLabs\LinCodex\Models\Article;
@@ -80,7 +81,9 @@ final class ArticleForm
 
             Select::make('icon')
                 ->label(__('fin-codex::fin-codex.editor.form.icon'))
+                ->native(false)
                 ->searchable()
+                ->preload()
                 ->allowHtml()
                 ->options(self::iconOptions(...)),
 
@@ -105,6 +108,7 @@ final class ArticleForm
         return Section::make(__('fin-codex::fin-codex.editor.form.publishing'))->schema([
             Select::make('format')
                 ->label(__('fin-codex::fin-codex.editor.form.format'))
+                ->native(false)->preload()->searchable(false)
                 ->options(fn (): array => collect(ArticleFormat::cases())
                     ->mapWithKeys(fn (ArticleFormat $format): array => [$format->value => $format->label()])
                     ->all())
@@ -119,6 +123,7 @@ final class ArticleForm
 
             Select::make('visibility')
                 ->label(__('fin-codex::fin-codex.editor.form.visibility'))
+                ->native(false)->preload()->searchable(false)
                 ->options(fn (): array => collect(Visibility::cases())
                     ->mapWithKeys(fn (Visibility $visibility): array => [$visibility->value => $visibility->label()])
                     ->all())
@@ -140,11 +145,24 @@ final class ArticleForm
                 ->label(__('fin-codex::fin-codex.editor.form.keywords'))
                 ->default([]),
 
-            Select::make('related')
+            // Picked from a modal table rather than a select: an article is
+            // told apart by more than its title once there are a few dozen,
+            // and the rows are keyed by slug because that is what the
+            // related list stores — file articles included.
+            ModalTableSelect::make('related')
                 ->label(__('fin-codex::fin-codex.editor.form.related'))
                 ->multiple()
-                ->searchable()
-                ->options(fn (?Article $record): array => self::relatedOptions($record))
+                ->tableConfiguration(ArticlePickerTable::class)
+                ->standaloneRecords(
+                    fn (?Article $record): array => app(ArticlePicker::class)->rows(except: $record?->slug),
+                    titleAttribute: 'title',
+                )
+                ->stackedList()
+                ->stackedListPrimary('title')
+                ->stackedListPrimaryWrapped()
+                ->stackedListSecondary('slug')
+                ->stackedListSecondaryWrapped()
+                ->emptyStateSelectButton()
                 ->default([]),
         ]);
     }
@@ -161,22 +179,6 @@ final class ArticleForm
             ->filter(fn (Heroicon $icon): bool => str_starts_with($icon->value, 'o-'))
             ->mapWithKeys(fn (Heroicon $icon): array => [
                 'heroicon-'.$icon->value => svg('heroicon-'.$icon->value, 'h-4 w-4 inline-block')->toHtml().' '.$icon->value,
-            ])
-            ->all();
-    }
-
-    /**
-     * @return array<string, string>
-     */
-    private static function relatedOptions(?Article $record): array
-    {
-        $default = TranslationTabs::languages()['default'];
-
-        return collect(app(ContentSource::class)->all())
-            ->reject(fn (ArticleData $article): bool => $article->slug === $record?->slug)
-            ->mapWithKeys(fn (ArticleData $article): array => [
-                $article->slug => ($article->translation($default)->title
-                    ?? SlugPath::humanise(SlugPath::lastSegment($article->slug))).' ('.$article->slug.')',
             ])
             ->all();
     }

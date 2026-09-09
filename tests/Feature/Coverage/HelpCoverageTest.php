@@ -128,9 +128,9 @@ it('registers the override on admin and staff and the built-in page on portal, n
 it('answers on its own route for a signed-in admin', function (): void {
     finCodexPageUser();
 
-    $url = route('filament.admin.pages.help-coverage');
+    $url = route('filament.admin.pages.codex-coverage');
 
-    expect($url)->toContain('/admin/help-coverage');
+    expect($url)->toContain('/admin/codex-coverage');
 
     $this->get($url)->assertOk();
 });
@@ -139,17 +139,17 @@ it('files two slots after the article resource on every panel that sets a sort',
     Filament::setCurrentPanel(Filament::getPanel('admin'));
 
     expect(AdminHelpCoverage::getNavigationGroup())->toBe('Help')
-        ->and(AdminHelpCoverage::getNavigationSort())->toBe(92);
+        ->and(AdminHelpCoverage::getNavigationSort())->toBe(91);
 
     Filament::setCurrentPanel(Filament::getPanel('staff'));
 
     expect(StaffHelpCoverage::getNavigationGroup())->toBe('Support')
-        ->and(StaffHelpCoverage::getNavigationSort())->toBe(7);
+        ->and(StaffHelpCoverage::getNavigationSort())->toBe(6);
 
     Filament::setCurrentPanel(Filament::getPanel('portal'));
 
     expect(HelpCoverage::getNavigationGroup())->toBe(NavigationGroup::Help)
-        ->and(HelpCoverage::getNavigationSort())->toBeNull();
+        ->and(HelpCoverage::getNavigationSort())->toBe(2);
 });
 
 it('reads its navigation label, title and badge tooltip from the lang files and follows the locale', function (): void {

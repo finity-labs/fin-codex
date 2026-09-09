@@ -46,7 +46,7 @@ it('renders the nested files table on the switching request and hides it again',
         ->assertDontSeeLivewire(FileArticlesTable::class);
 
     // ?tab=files deep links through ListRecords' #[Url(as: 'tab')] property.
-    $html = $this->get('/admin/help-articles?tab=files')->assertOk()->getContent();
+    $html = $this->get('/admin/codex-articles?tab=files')->assertOk()->getContent();
 
     expect($html)->toContain('users/roles')
         ->toContain(__('fin-codex::fin-codex.editor.files.import'));
@@ -160,7 +160,7 @@ it('shows the shadowed-file notice on the edit page and not on a database-only a
 
     Livewire::test(EditArticle::class, ['record' => $article->getRouteKey()])->assertSee($notice);
 
-    $html = $this->get('/admin/help-articles/'.$article->getRouteKey().'/edit')->assertOk()->getContent();
+    $html = $this->get('/admin/codex-articles/'.$article->getRouteKey().'/edit')->assertOk()->getContent();
 
     expect($html)->toContain('en/users/roles.md');
 

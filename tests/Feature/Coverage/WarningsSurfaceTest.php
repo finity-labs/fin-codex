@@ -286,12 +286,12 @@ it('keeps the warnings count and the uncovered count apart', function (): void {
 it('shows both numbers in the sidebar of a rendered panel page', function (): void {
     finCodexSurfaceUser();
 
-    $html = (string) $this->get('/admin/help-articles')->assertOk()->getContent();
+    $html = (string) $this->get('/admin/codex-articles')->assertOk()->getContent();
 
     $warnings = app(SourceWarnings::class)->count();
     $uncovered = app(CoverageReport::class)->uncovered('admin');
 
-    expect(finCodexSurfaceNavBadge(finCodexSurfaceNavItem($html, '/admin/help-articles')))->toBe((string) $warnings)
-        ->and(finCodexSurfaceNavBadge(finCodexSurfaceNavItem($html, '/admin/help-coverage')))->toBe((string) $uncovered)
+    expect(finCodexSurfaceNavBadge(finCodexSurfaceNavItem($html, '/admin/codex-articles')))->toBe((string) $warnings)
+        ->and(finCodexSurfaceNavBadge(finCodexSurfaceNavItem($html, '/admin/codex-coverage')))->toBe((string) $uncovered)
         ->and($warnings)->not->toBe($uncovered);
 });

@@ -56,6 +56,8 @@ final class PreviewAction
             ))
             ->modalContent(static fn (CreateArticle|EditArticle $livewire, ?Article $record): View => view('fin-codex::editor.preview', [
                 'html' => self::render($livewire, $record),
+                'locale' => self::locale($livewire),
+                'title' => null,
                 'hasDarkMode' => Filament::getCurrentPanel()?->hasDarkMode() ?? true,
             ]));
     }

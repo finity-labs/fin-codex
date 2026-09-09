@@ -167,7 +167,7 @@ it('stops listing a denied page in the rendered panel', function (): void {
 it('refuses the denied page on its own route', function (): void {
     $user = finCodexShieldUser();
 
-    $url = route('filament.portal.pages.help-settings');
+    $url = route('filament.portal.pages.codex-settings');
 
     $this->actingAs($user)->get($url)->assertOk();
 

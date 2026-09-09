@@ -53,6 +53,7 @@ final class RevisionPreviewAction
                 [
                     'html' => self::render($record, $livewire),
                     'title' => $record->title,
+                    'locale' => $record->locale,
                     'hasDarkMode' => Filament::getCurrentPanel()?->hasDarkMode() ?? true,
                 ],
             ));

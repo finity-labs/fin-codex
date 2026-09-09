@@ -53,13 +53,13 @@ function finCodexLangValues(string $locale): array
  *
  * Format, Panel, URI and Name are the words German and Hungarian actually
  * borrow whole — they are the measured identical pairs on today's files
- * (`Format` in de; `Panel` and `URI` in both; `Name` in de). Markdown, HTML and
+ * (`Format` in de; `Panel` and `URI` in both; `Panels` and `Name` in de). Markdown, HTML and
  * Codex are product names that never translate. Anything added beyond these
  * seven needs a comment saying why the word is the same in all three.
  *
  * @var list<string>
  */
-const FIN_CODEX_IDENTICAL_ALLOWED = ['Format', 'Panel', 'URI', 'Name', 'Markdown', 'HTML', 'Codex'];
+const FIN_CODEX_IDENTICAL_ALLOWED = ['Format', 'Panel', 'Panels', 'URI', 'Name', 'Markdown', 'HTML', 'Codex'];
 
 /**
  * The invariant the two enum rules below protect.

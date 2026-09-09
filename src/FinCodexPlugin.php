@@ -12,7 +12,6 @@ use Filament\Panel;
 use Filament\Support\Concerns\EvaluatesClosures;
 use Filament\Support\View\ViewManager;
 use Filament\View\PanelsRenderHook;
-use FinityLabs\FinCodex\Auth\ArticlePolicyRegistration;
 use FinityLabs\FinCodex\Enums\NavigationGroup;
 use FinityLabs\FinCodex\Pages\HelpCoverage;
 use FinityLabs\FinCodex\Pages\HelpSettings;
@@ -63,6 +62,30 @@ class FinCodexPlugin implements Plugin
 
     protected string $policyNamespace = 'App\\Policies';
 
+    /**
+     * What the Media tab's upload accepts, as MIME types. Documents a help
+     * article would link to; never an archive, a script or an SVG — the
+     * body editor's own drop zone takes the five raster image types.
+     *
+     * @var list<string>
+     */
+    public const DEFAULT_DOCUMENT_TYPES = [
+        'application/pdf',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.ms-excel',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/vnd.ms-powerpoint',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'text/plain',
+        'text/csv',
+    ];
+
+    /** @var list<string>|Closure */
+    protected array|Closure $documentTypes = self::DEFAULT_DOCUMENT_TYPES;
+
+    protected int|Closure $documentMaxSize = 10_240;
+
     public static function make(): static
     {
         return app(static::class);
@@ -74,9 +97,11 @@ class FinCodexPlugin implements Plugin
         return filament(app(static::class)->getId());
     }
 
+    public const ID = 'fin-codex';
+
     public function getId(): string
     {
-        return 'fin-codex';
+        return self::ID;
     }
 
     /**
@@ -161,7 +186,7 @@ class FinCodexPlugin implements Plugin
      */
     private function bootPolicy(): void
     {
-        ArticlePolicyRegistration::register($this->getPolicyNamespace());
+        FinCodexServiceProvider::registerArticlePolicy($this->getPolicyNamespace());
     }
 
     /**
@@ -414,6 +439,59 @@ class FinCodexPlugin implements Plugin
     public function getCoveragePage(): ?string
     {
         return $this->coveragePage;
+    }
+
+    /**
+     * The MIME types the Media tab's upload accepts, replacing the default
+     * list of documents; the body editor's image drop zone is unaffected.
+     *
+     * @param  list<string>|Closure  $mimeTypes
+     */
+    public function documentTypes(array|Closure $mimeTypes): static
+    {
+        $this->documentTypes = $mimeTypes;
+
+        return $this;
+    }
+
+    /** @return list<string> */
+    public function getDocumentTypes(): array
+    {
+        $types = $this->evaluate($this->documentTypes);
+
+        return is_array($types) ? array_values(array_filter($types, 'is_string')) : self::DEFAULT_DOCUMENT_TYPES;
+    }
+
+    /** The largest document the Media tab accepts, in kilobytes. */
+    public function documentMaxSize(int|Closure $kilobytes): static
+    {
+        $this->documentMaxSize = $kilobytes;
+
+        return $this;
+    }
+
+    public function getDocumentMaxSize(): int
+    {
+        return (int) $this->evaluate($this->documentMaxSize);
+    }
+
+    /**
+     * The current panel's document settings, or the defaults outside a
+     * panel or on one without the plugin.
+     *
+     * @return array{types: list<string>, maxSize: int}
+     */
+    public static function documentUploads(): array
+    {
+        try {
+            $plugin = static::get();
+        } catch (Throwable) {
+            $plugin = null;
+        }
+
+        return $plugin instanceof self
+            ? ['types' => $plugin->getDocumentTypes(), 'maxSize' => $plugin->getDocumentMaxSize()]
+            : ['types' => self::DEFAULT_DOCUMENT_TYPES, 'maxSize' => 10_240];
     }
 
     public function policyNamespace(string $namespace): static

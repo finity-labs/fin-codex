@@ -20,7 +20,7 @@ use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use FinityLabs\FinCodex\FinCodexPlugin;
-use FinityLabs\FinCodex\Traits\HasPageShieldSupport;
+use FinityLabs\FinSupport\Pages\Concerns\HasPageShieldSupport;
 use FinityLabs\LinCodex\Enums\FallbackBehaviour;
 use FinityLabs\LinCodex\Models\ArticleRevision;
 use FinityLabs\LinCodex\Models\ArticleTranslation;
@@ -39,7 +39,7 @@ use UnitEnum;
  * plugin, unless the host named its own through settingsPage(); such an
  * override extends this class, which is why the class is not final — the same
  * reason Resources\ArticleResource is not. The slug is inherited, so each
- * panel gets its own filament.{panel}.pages.help-settings route.
+ * panel gets its own filament.{panel}.pages.codex-settings route.
  *
  * Navigation placement is not the page's business: the group comes from the
  * panel's own plugin options and the sort is that panel's article-resource
@@ -56,7 +56,7 @@ class HelpSettings extends SettingsPage
 
     protected static string $settings = CodexSettings::class;
 
-    protected static ?string $slug = 'help-settings';
+    protected static ?string $slug = 'codex-settings';
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedCog6Tooth;
 
@@ -66,16 +66,14 @@ class HelpSettings extends SettingsPage
     }
 
     /**
-     * One slot after the article resource, which reads the same single
-     * navigationSort() option. The page adds one to whatever the host set and
-     * stays null when the host set nothing, in which case Filament sorts by
-     * label.
+     * The last of the three: two slots after the article resource, one after
+     * the coverage page, all reading the panel's single navigationSort()
+     * option. With none set the three still sit in that order — 1, 2, 3 —
+     * rather than in whatever order the translated labels happen to sort.
      */
     public static function getNavigationSort(): ?int
     {
-        $sort = FinCodexPlugin::get()->getNavigationSort();
-
-        return $sort === null ? null : $sort + 1;
+        return (FinCodexPlugin::get()->getNavigationSort() ?? 1) + 2;
     }
 
     public static function getNavigationLabel(): string
@@ -185,12 +183,14 @@ class HelpSettings extends SettingsPage
                 ->schema([
                     Select::make('default_locale')
                         ->label(__('fin-codex::fin-codex.settings.reading.default_locale'))
+                        ->native(false)->preload()->searchable(false)
                         ->helperText(__('fin-codex::fin-codex.settings.reading.default_locale_help'))
                         ->options(fn (Get $get): array => self::languageOptions($get))
                         ->live()
                         ->required(),
                     Select::make('fallback')
                         ->label(__('fin-codex::fin-codex.settings.reading.fallback'))
+                        ->native(false)->preload()->searchable(false)
                         // The core enum's own labels; fin-codex never redeclares them.
                         ->options(collect(FallbackBehaviour::cases())
                             ->mapWithKeys(fn (FallbackBehaviour $case): array => [$case->value => $case->label()])

@@ -206,7 +206,7 @@ it('files the package pages under each panel\'s own resource override', function
 
     expect($admin)->toHaveCount(1)
         ->and($admin[0]->routeCount())->toBe(3)
-        ->and($admin[0]->key)->toBe('filament.admin.resources.help-articles.create')
+        ->and($admin[0]->key)->toBe('filament.admin.resources.codex-articles.create')
         ->and($staff)->toHaveCount(1)
         ->and($staff[0]->routeCount())->toBe(3)
         ->and(finCodexCoverageRowsFor('admin', ArticleResource::class))->toBe([])

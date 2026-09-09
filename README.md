@@ -59,12 +59,14 @@ The install command:
 
 - Checks that lin-codex's articles table exists, and offers to run `codex:install` if it doesn't.
 - Registers `FinCodexPlugin::make()` in one of your panel providers (it lists the panels it found; pass `--panel=admin` to skip the prompt).
+- Asks which languages the help articles are written in, with the locales your application already translates pre-selected, and writes them to the Codex settings. Pass `--locales=en,de` to answer without the prompt. The application locale stays the default language when it is among them.
+- Offers to import eleven starter articles in the configured languages (they exist in en, de and hu): an authenticated **Help** section about the help system itself — getting help, writing articles, coverage, settings, and declaring help in code — and a public **Your account** section for Filament's own screens — signing in, creating an account, a forgotten password, email verification and the profile page (the profile article is authenticated). The account section is public on purpose: lin-codex hides an article whose ancestor the reader may not open, so a visitor on the sign-in page only sees articles whose whole path is public. They land as ordinary database articles, attached to the pages they describe and to the panel the plugin was installed on, and are yours to edit or delete. `--skip-starter-articles` leaves them out; a slug that already exists is left alone.
 - Offers to publish the translations and the views. Both default to **no** — a published copy stops receiving upstream changes.
 - Registers the article resource in `config/filament-shield.php` if [Filament Shield](#filament-shield-integration) is installed, and runs `shield:generate`.
 
 It never publishes or migrates anything belonging to lin-codex. That is `codex:install`'s job, and running it twice is safe.
 
-Pass `--force` to overwrite already-published files, and `--no-interaction` to take every default (the first panel it finds, no publishing, Shield wiring on if the config is there).
+Pass `--force` to overwrite already-published files, and `--no-interaction` to take every default (the first panel it finds, the installed locales, the starter articles, no publishing, Shield wiring on if the config is there).
 
 ### Register the plugin by hand
 
@@ -86,7 +88,12 @@ Register it on as many panels as you like. Each panel gets its own options, its 
 
 ### Styles
 
-There is nothing to do. The help button, the guest link and the drawer's chrome — its header buttons, search field, tabs and footer link — are Filament's own components, so they follow your panel's colours, radii and font as any other control does. Article content inside the drawer is rendered by lin-codex's partials and styled by its stylesheet, which arrives through the core's hashed route, injected into `<head>` on every panel page; fin-codex remaps that stylesheet's tokens onto the panel's grey and primary scales for light and dark mode. You do not need a custom Filament theme, and you do not need a `@source` line if you have one.
+There is nothing to do. The help button, the guest link and the drawer's chrome — its header buttons, search field, tabs and footer link — are Filament's own components, so they follow your panel's colours, radii and font as any other control does. Article content inside the drawer is rendered by lin-codex's partials and styled by its stylesheet, which arrives through the core's hashed route, injected into `<head>` on every panel page; fin-codex remaps that stylesheet's tokens onto the panel's grey and primary scales for light and dark mode. You do not need a custom Filament theme for any of that. The editor's modal pickers (related articles, the context key, the coverage page's attach dialog) are [fin-modal-table-select](https://github.com/finity-labs/fin-modal-table-select) components with views of their own, so if you *do* run a custom theme, add them to its `@source` list:
+
+```css
+/* resources/css/filament/admin/theme.css */
+@source '../../../../vendor/finity-labs/fin-modal-table-select/resources/**/*.blade.php';
+```
 
 The core drawer view stays what a page outside Filament gets. Inside a panel, fin-codex renders its own `Livewire\HelpDrawer`, a subclass of the core component that only names a different view, so every property, action and the Alpine glue are the core's.
 
@@ -248,7 +255,7 @@ Without `isPersistent: true`, Livewire update requests skip the middleware and t
 
 ## The article editor
 
-**Help → Help articles** is a normal Filament resource over lin-codex's `Article` model, with filters for published state, visibility, format, source and per-language translation state.
+**Help → Help articles** is a normal Filament resource over lin-codex's `Article` model. Titles are shown in the panel's language, falling back to the default language. A **Panels** column shows which panels an article's pages target ("any panel" for a context without one), and the filters cover published state, visibility, format, source, panel and per-language translation state.
 
 Next to the article list sits a **From files** tab. If lin-codex is reading articles off disk as well as out of the database, every file article that has no database row yet is listed there with an **Import and edit** button. Importing creates the database row through the core's importer and opens it. The import is idempotent: if a row already exists for that slug it is handed back rather than overwritten, so pressing the button twice opens what the first press created. Re-importing changed file content over an existing article is not supported yet.
 
@@ -258,7 +265,7 @@ Next to the article list sits a **From files** tab. If lin-codex is reading arti
 
 ### Contexts
 
-The Contexts repeater in the form's sidebar is where you say which screens an article shows up on. Contexts are always **picked, never typed** — the panel, the type and the target come from selects built out of what is actually registered. `*` means "any panel" and is stored as a null panel id.
+The Contexts repeater in the form's sidebar is where you say which screens an article shows up on. Contexts are always **picked, never typed** — the panel and the type are selects, and the target opens a modal table of what the chosen panel actually registers for that type: for `class:` every resource and custom page with its navigation label, class, kind, path and panels; for `route:` every named GET route with the page it leads to, its name, path and panel. The picked page shows its label with the class, or the route name and path, underneath. `*` means "any panel", widens the table to every panel, and is stored as a null panel id. The modal is [fin-modal-table-select](https://github.com/finity-labs/fin-modal-table-select), which the related-articles field and the coverage page's attach dialog use too.
 
 Contexts that come from a `HasHelp` class are listed above the repeater as read-only rows and never enter form state. The mapping lives in code, so that's where you change it.
 
@@ -266,11 +273,19 @@ Contexts that come from a `HasHelp` class are listed above the repeater as read-
 
 One tab per language from the [settings](#settings). Each tab holds the title, excerpt and body for that language, plus **Copy from default language** for starting a translation from the current default text. A non-default tab is optional as a whole: it is saved when title and body are both filled, refused with a validation message when only one of them is, and deleted when both are emptied — after a snapshot while revisions are on, so the text it held is one restore away.
 
-A translation whose default-language source has changed since it was last saved gets an **Outdated** badge in the list and a filter of its own. Detection is timestamp-based, which has one edge worth knowing: changing an article's `keywords` or `format` re-indexes every translation to the same second and clears every outdated badge on that article. Content-hash detection is not in this release.
+A language is either translated or **Missing**, in the tabs and in the list's languages column, with a *Missing language* filter. There is no "outdated" marking: the editor cannot tell a corrected typo in the default text from a rewrite, and a badge that fires on both is soon ignored. `Editor\OutdatedTranslations` still computes which translations were saved before the default language, and the scope behind it, for a host that wants to surface that itself.
 
 ### Images
 
-Drop an image into a Markdown body and it uploads to lin-codex's `media.disk` and `media.directory`. Those are core config, not plugin options — a host that wants help images somewhere else sets them in `config/lin-codex.php`.
+Drop an image into a Markdown body and it uploads to lin-codex's `media.disk` and `media.directory`. Those are core config, not plugin options — a host that wants help images somewhere else sets them in `config/lin-codex.php`. The directory takes the placeholders `{Y}`, `{m}` and `{d}`, expanded at upload time to the year, month and day, and the core's default is `codex/{Y}/{m}`, so a busy site's images spread over dated folders instead of one flat directory. A stored image keeps the path it was written under.
+
+An image in a preview, in the revision preview and in the Media tab opens full size when clicked, the way it does in the drawer. The Media tab's **Download** action streams the file through the application with its original name, so it works on any disk.
+
+**Documents.** A PDF or an office file comes in through the Media tab's **Upload file** action, since the body editor's drop zone takes images only. `FinCodexPlugin::make()->documentTypes([...])` replaces the accepted MIME types (PDF, Word, Excel, PowerPoint, plain text and CSV by default; never an archive, a script or an SVG) and `->documentMaxSize(20480)` the ceiling in kilobytes. Documents land in the same dated folders as images, with the same row. Every upload is stored under its own name, slugified for the URL — `User Guide (final).pdf` becomes `user-guide-final.pdf`, and a repeat in the same month gets `-2` — so the link an article carries and the name a browser saves the file as both read like the upload; the media row keeps the original name.
+
+**Reusing a file.** An upload belongs to the article it was dropped into, but any article may use it: **Insert file** under each Markdown body opens a table of every upload of any article — thumbnail, file name, type, the article it was uploaded to, size and date — and appends the chosen one's Markdown to the body: an image as an image, a document as a link with the file name as its text. The core stamps a link to a document with a `download` attribute, so in the drawer and the previews it saves the file rather than leaving the article. Deleting a file is refused while any article's body still references it, whichever article uploaded it.
+
+**Every upload is public.** Images and documents sit on the public disk and are reachable by anyone holding the URL, which is what help material usually wants. Internal documents would need authenticated delivery — a per-file flag, a private disk and a gated download route — which is planned (EXT-09 in the package's planning notes) and not built.
 
 The disk needs a `url`, or the editor cannot show what was just uploaded. SVG is refused. Removing an image from a body leaves its `codex_media` row behind for the [media manager](#revisions-and-media) to clean up.
 
@@ -328,7 +343,7 @@ Deleting an *article* leaves its `codex_media` rows with a null `article_id`. Th
 
 **Its number is not `codex:coverage`'s.** lin-codex's console command counts routes and credits only what the core's route report matched. The page counts *screens* — a resource's list, create and edit pages fold into one row — and additionally credits a resource-class context. The two numbers legitimately differ, and the navigation badge is the page's.
 
-The panel and coverage filters are deferred: they show an **Apply** button, Filament's default, kept so the page behaves like the article list. Nothing happens until you press it.
+The panel and coverage filters sit behind the table's filter button and are deferred, Filament's default: nothing happens until you press **Apply**.
 
 **The badges cost one report per panel page render.** Navigation is built on every page and both badges are read eagerly. The content source is read once per request and shared by the drawer, the coverage report and the warnings (the core rebuilds its set once more for warnings, so two reads in all), and the route report is built once. On a large knowledge base that is still a full hydration of every article on every page; if you don't want to pay it, extend the page, return `null` from `getNavigationBadge()`, and name your class through `->coveragePage(...)` — and the same for the warnings count on `->articleResource(...)`.
 
@@ -522,7 +537,6 @@ Also worth knowing:
 - **Media rows orphaned by an article delete are not cleaned up.** They keep their file and lose their `article_id`, and appear on no Media tab.
 - **Re-importing a file article over an existing database row** is not available; the import hands back the existing row instead.
 - **Filament 5's multi-configuration resource registrations are not scanned** for `HasHelp` declarations.
-- **The outdated-translation badge is timestamp-based**, so a keywords or format change clears every badge on that article.
 
 ## Testing
 

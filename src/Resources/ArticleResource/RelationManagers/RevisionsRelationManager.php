@@ -9,10 +9,10 @@ use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
-use FinityLabs\FinCodex\Panel\Concerns\ResolvesPanelUser;
 use FinityLabs\FinCodex\Resources\ArticleResource\Actions\RestoreRevisionAction;
 use FinityLabs\FinCodex\Resources\ArticleResource\Actions\RevisionPreviewAction;
 use FinityLabs\FinCodex\Resources\ArticleResource\Schemas\TranslationTabs;
+use FinityLabs\FinSupport\Panel\Concerns\ResolvesPanelUser;
 use FinityLabs\LinCodex\Models\ArticleRevision;
 use FinityLabs\LinCodex\Revisions\RevisionManager;
 use Illuminate\Database\Eloquent\Builder;
@@ -120,6 +120,7 @@ final class RevisionsRelationManager extends RelationManager
             ])
             ->filters([
                 SelectFilter::make('locale')
+                    ->native(false)->preload()->searchable(false)
                     ->label(__('fin-codex::fin-codex.revisions.columns.locale'))
                     ->options($localeOptions),
             ])

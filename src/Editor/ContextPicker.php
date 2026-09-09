@@ -94,7 +94,22 @@ final class ContextPicker
      */
     public function classKeys(?string $panelId): array
     {
-        $options = [];
+        return array_column($this->classRows($panelId), 'label', 'key');
+    }
+
+    /**
+     * The same classes as picker rows, one per class in label order: the
+     * class as the key, its navigation label, whether it is a resource or a
+     * custom page, the path of its first route in the first panel that
+     * registers it, and every panel that does — the columns of the modal
+     * picker, so an editor choosing between two "Users" sees which is which.
+     *
+     * @return list<array{key: string, label: string, kind: string, uri: ?string, panel: list<string>}>
+     */
+    public function classRows(?string $panelId): array
+    {
+        $rows = [];
+        $uris = $this->classUris();
 
         foreach ($this->panelsFor($panelId) as $panel) {
             foreach ($panel->getResources() as $resource) {
@@ -102,17 +117,17 @@ final class ContextPicker
                     continue;
                 }
 
-                $options[ltrim($resource, '\\')] ??= $this->navigationLabel($resource) ?? $resource;
+                $this->addClassRow($rows, ltrim($resource, '\\'), $panel->getId(), 'resource', $uris);
             }
 
             foreach ($panel->getPages() as $page) {
-                $options[ltrim($page, '\\')] ??= $this->navigationLabel($page) ?? $page;
+                $this->addClassRow($rows, ltrim($page, '\\'), $panel->getId(), 'custom_page', $uris);
             }
         }
 
-        asort($options);
+        uasort($rows, static fn (array $a, array $b): int => $a['label'] <=> $b['label']);
 
-        return $options;
+        return array_values($rows);
     }
 
     /**
@@ -127,10 +142,22 @@ final class ContextPicker
      */
     public function routeKeys(?string $panelId): array
     {
+        return array_column($this->routeRows($panelId), 'label', 'key');
+    }
+
+    /**
+     * The same routes as picker rows, one per route in key order: the route
+     * name as the key, its label, its path, and the panel its name belongs
+     * to — null for a route outside Filament, which "any panel" lists too.
+     *
+     * @return list<array{key: string, label: string, uri: string, panel: ?string}>
+     */
+    public function routeRows(?string $panelId): array
+    {
         $panelId = $this->normalise($panelId);
         $prefix = $panelId === null ? null : 'filament.'.$panelId.'.';
         $ignore = $this->ignorePatterns();
-        $options = [];
+        $rows = [];
 
         foreach ($this->router->getRoutes()->getRoutes() as $route) {
             if (! in_array('GET', $route->methods(), true)) {
@@ -153,19 +180,24 @@ final class ContextPicker
                 }
             }
 
-            $options[$name] = $this->routeLabel($route) ?? $name;
+            $rows[$name] = [
+                'key' => $name,
+                'label' => $this->routeLabel($route) ?? $name,
+                'uri' => $this->path($route),
+                'panel' => $this->routePanel($name),
+            ];
         }
 
-        ksort($options);
+        ksort($rows);
 
-        return $options;
+        return array_values($rows);
     }
 
     /**
-     * The human label of one stored row, for the read-only cell beside the
-     * selects: the option label for a class or route key, the pattern itself
-     * for a url, and null for a blank or unknown key — a key that no longer
-     * resolves is a context pointing at something the application dropped.
+     * The human label of one stored row: the option label for a class or
+     * route key, the pattern itself for a url, and null for a blank or
+     * unknown key — a key that no longer resolves is a context pointing at
+     * something the application dropped.
      */
     public function label(?string $panelId, ?string $type, ?string $key): ?string
     {
@@ -179,6 +211,84 @@ final class ContextPicker
             ContextType::Url->key() => $key,
             default => null,
         };
+    }
+
+    /**
+     * One row per class; a class two panels register keeps the first
+     * panel's label and path and lists both panels.
+     *
+     * @param  array<string, array{key: string, label: string, kind: string, uri: ?string, panel: list<string>}>  $rows
+     * @param  array<string, array<string, string>>  $uris
+     */
+    private function addClassRow(array &$rows, string $class, string $panelId, string $kind, array $uris): void
+    {
+        if (isset($rows[$class])) {
+            if (! in_array($panelId, $rows[$class]['panel'], true)) {
+                $rows[$class]['panel'][] = $panelId;
+            }
+
+            return;
+        }
+
+        $rows[$class] = [
+            'key' => $class,
+            'label' => $this->navigationLabel($class) ?? $class,
+            'kind' => (string) __('fin-codex::fin-codex.editor.contexts.'.$kind),
+            'uri' => $uris[$panelId][$class] ?? null,
+            'panel' => [$panelId],
+        ];
+    }
+
+    /**
+     * The path of the first route of every Filament page class, per panel,
+     * and of every resource through the pages that belong to it — the list
+     * page registers first, so a resource shows its index path.
+     *
+     * @return array<string, array<string, string>>
+     */
+    private function classUris(): array
+    {
+        $uris = [];
+
+        foreach ($this->router->getRoutes()->getRoutes() as $route) {
+            $name = $route->getName();
+            $panelId = $name === null ? null : $this->routePanel($name);
+
+            if ($panelId === null) {
+                continue;
+            }
+
+            $class = $this->pageClass($route);
+
+            if ($class === null) {
+                continue;
+            }
+
+            $uris[$panelId][$class] ??= $this->path($route);
+
+            if (is_a($class, ResourcePage::class, true)) {
+                $uris[$panelId][ltrim($class::getResource(), '\\')] ??= $this->path($route);
+            }
+        }
+
+        return $uris;
+    }
+
+    /** The panel a `filament.{id}.` route name belongs to; null for any other route. */
+    private function routePanel(string $name): ?string
+    {
+        if (! str_starts_with($name, 'filament.')) {
+            return null;
+        }
+
+        $panelId = Str::before(Str::after($name, 'filament.'), '.');
+
+        return array_key_exists($panelId, Filament::getPanels()) ? $panelId : null;
+    }
+
+    private function path(Route $route): string
+    {
+        return '/'.ltrim($route->uri(), '/');
     }
 
     /**

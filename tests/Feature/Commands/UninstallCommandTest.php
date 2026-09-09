@@ -116,7 +116,7 @@ it('never drops a codex table and never deletes an article', function () {
     Article::factory()->create(['slug' => 'intro']);
     Article::factory()->create(['slug' => 'users']);
 
-    finCodexRunUninstallCommand('fin-codex:install', ['--panel' => 'admin']);
+    finCodexRunUninstallCommand('fin-codex:install', ['--panel' => 'admin', '--skip-starter-articles' => true]);
 
     [$exitCode, $output] = finCodexRunUninstallCommand('fin-codex:uninstall');
 

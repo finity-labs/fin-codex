@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace FinityLabs\FinCodex\Commands;
 
-use FinityLabs\FinCodex\Commands\Concerns\CanDeregisterPlugin;
-use FinityLabs\FinCodex\Commands\Concerns\DiscoversPanelProviders;
+use FinityLabs\FinCodex\FinCodexPlugin;
 use FinityLabs\FinCodex\Pages\HelpCoverage;
 use FinityLabs\FinCodex\Pages\HelpSettings;
 use FinityLabs\FinCodex\Resources\ArticleResource;
+use FinityLabs\FinSupport\Console\Concerns\DiscoversPanelProviders;
+use FinityLabs\FinSupport\Console\Concerns\EditsPanelProviders;
+use FinityLabs\FinSupport\Console\Concerns\EditsShieldConfig;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -34,8 +36,9 @@ use RecursiveIteratorIterator;
  */
 class UninstallCommand extends Command
 {
-    use CanDeregisterPlugin;
     use DiscoversPanelProviders;
+    use EditsPanelProviders;
+    use EditsShieldConfig;
 
     /**
      * Shield's facade, as a string: fin-codex does not depend on Shield and
@@ -83,38 +86,25 @@ class UninstallCommand extends Command
 
             if ($content !== false && str_contains($content, 'FinCodexPlugin')) {
                 $this->comment("Removing FinCodexPlugin from the {$panelId} panel...");
-                $this->deregisterPlugin($path);
+                $this->deregisterPlugin($path, FinCodexPlugin::class);
             }
         }
     }
 
     protected function removeShieldConfig(): void
     {
-        $configPath = config_path('filament-shield.php');
-
-        if (! file_exists($configPath)) {
+        if (! $this->hasShieldConfig()) {
             return;
         }
 
-        $content = file_get_contents($configPath);
+        $content = file_get_contents($this->shieldConfigPath());
 
-        if ($content === false || ! str_contains($content, 'FinityLabs\\FinCodex')) {
-            $this->removeShieldPermissions();
+        if ($content !== false && str_contains($content, 'FinityLabs\\FinCodex')) {
+            $this->comment('Removing the Codex article resource from the Shield config...');
 
-            return;
-        }
-
-        $this->comment('Removing the Codex article resource from the Shield config...');
-
-        $content = preg_replace(
-            '#[ \t]*\\\\FinityLabs\\\\FinCodex\\\\[^\n]+::class\s*=>\s*\[\n(?:[ \t]+\'[^\']+\',?\n)*[ \t]*\],?\n#',
-            '',
-            $content,
-        );
-
-        if ($content !== null) {
-            file_put_contents($configPath, $content);
-            $this->info('  Codex article resource removed from the Shield config');
+            if ($this->unregisterShieldResources('FinityLabs\\FinCodex')) {
+                $this->info('  Codex article resource removed from the Shield config');
+            }
         }
 
         $this->removeShieldPermissions();

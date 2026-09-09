@@ -136,9 +136,8 @@ it('shows how many translations each language holds', function (): void {
 
     finCodexRemovalPage()
         ->assertOk()
-        // The marker carries the row's code and its count together, the way
-        // ContextsRepeater's data-fin-codex-context-label carries its value:
-        // one attribute is enough to tell the rows apart.
+        // The marker carries the row's code and its count together: one
+        // attribute is enough to tell the rows apart.
         ->assertSee('data-fin-codex-language-count="en:3"', escape: false)
         ->assertSee('data-fin-codex-language-count="de:1"', escape: false);
 });

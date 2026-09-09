@@ -12,6 +12,9 @@ use Filament\Tables\Table;
 use FinityLabs\FinCodex\Auth\ArticleAbility;
 use FinityLabs\FinCodex\Editor\MediaReferences;
 use FinityLabs\FinCodex\Resources\ArticleResource\Actions\DeleteMediaAction;
+use FinityLabs\FinCodex\Resources\ArticleResource\Actions\DownloadMediaAction;
+use FinityLabs\FinCodex\Resources\ArticleResource\Actions\UploadMediaAction;
+use FinityLabs\FinCodex\Resources\ArticleResource\Actions\ViewMediaAction;
 use FinityLabs\LinCodex\Models\Article;
 use FinityLabs\LinCodex\Models\Media;
 use Illuminate\Database\Eloquent\Builder;
@@ -26,9 +29,11 @@ use Illuminate\Support\Number;
  * (article_id null) cannot appear here at all. Cleaning those up is a separate
  * job and is deferred.
  *
- * No header actions on purpose: a file uploaded here would be one nothing
- * points at. Images arrive through the Markdown editor, which writes the
- * reference into the body in the same breath.
+ * Images arrive through the Markdown editor, which writes the reference
+ * into the body in the same breath. Documents — a PDF, an office file —
+ * arrive through the upload action here, and the body editor's "Insert
+ * file" picker links them; a document uploaded and never linked is a row
+ * the delete action will happily remove.
  *
  * The preview is a ViewColumn over a rescued URL rather than Filament's own
  * image column, which calls Storage::disk() and url() unrescued and does one
@@ -90,7 +95,10 @@ final class MediaRelationManager extends RelationManager
                         'url' => $references->urlFor($record),
                         'isImage' => str_starts_with($record->mime_type, 'image/'),
                         'label' => $record->name,
-                    ]),
+                    ])
+                    // The thumbnail opens the same modal as the row's view
+                    // action; a placeholder for a non-image has nothing to open.
+                    ->action(ViewMediaAction::make()),
                 TextColumn::make('name')
                     ->label(__('fin-codex::fin-codex.media.columns.name'))
                     ->searchable()
@@ -112,8 +120,12 @@ final class MediaRelationManager extends RelationManager
                     ->dateTimeTooltip()
                     ->sortable(),
             ])
-            ->headerActions([])
+            ->headerActions([
+                UploadMediaAction::make(),
+            ])
             ->recordActions([
+                ViewMediaAction::make(),
+                DownloadMediaAction::make(),
                 DeleteMediaAction::make(),
             ]);
     }

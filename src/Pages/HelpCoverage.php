@@ -7,7 +7,6 @@ namespace FinityLabs\FinCodex\Pages;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Facades\Filament;
-use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Components\EmbeddedTable;
@@ -23,19 +22,19 @@ use Filament\Tables\Table;
 use FinityLabs\FinCodex\Auth\ArticleAbility;
 use FinityLabs\FinCodex\Coverage\CoverageReport;
 use FinityLabs\FinCodex\Coverage\WarningsSection;
+use FinityLabs\FinCodex\Editor\ArticlePicker;
+use FinityLabs\FinCodex\Editor\ArticlePickerTable;
+use FinityLabs\FinCodex\Editor\ArticleTitle;
 use FinityLabs\FinCodex\Editor\ArticleWriter;
 use FinityLabs\FinCodex\Editor\ContextPicker;
 use FinityLabs\FinCodex\Editor\FileArticleAdopter;
 use FinityLabs\FinCodex\FinCodexPlugin;
-use FinityLabs\FinCodex\Panel\Concerns\ResolvesPanelUser;
 use FinityLabs\FinCodex\Resources\ArticleResource;
-use FinityLabs\FinCodex\Resources\ArticleResource\Schemas\TranslationTabs;
-use FinityLabs\FinCodex\Traits\HasPageShieldSupport;
-use FinityLabs\LinCodex\Contracts\ContentSource;
-use FinityLabs\LinCodex\Data\ArticleData;
+use FinityLabs\FinModalTableSelect\Components\ModalTableSelect;
+use FinityLabs\FinSupport\Pages\Concerns\HasPageShieldSupport;
+use FinityLabs\FinSupport\Panel\Concerns\ResolvesPanelUser;
 use FinityLabs\LinCodex\Enums\ContextType;
 use FinityLabs\LinCodex\Models\Article;
-use FinityLabs\LinCodex\Sources\SlugPath;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Str;
@@ -76,7 +75,7 @@ class HelpCoverage extends Page implements HasTable
     use InteractsWithTable;
     use ResolvesPanelUser;
 
-    protected static ?string $slug = 'help-coverage';
+    protected static ?string $slug = 'codex-coverage';
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedClipboardDocumentCheck;
 
@@ -86,15 +85,14 @@ class HelpCoverage extends Page implements HasTable
     }
 
     /**
-     * Two slots after the article resource: the settings page takes the slot
-     * between them, and both read the panel's single navigationSort() option.
-     * Null stays null, in which case Filament sorts by label.
+     * One slot after the article resource; the settings page takes the slot
+     * after this one. All three read the panel's single navigationSort()
+     * option, and with none set they still sit in that order — 1, 2, 3 —
+     * rather than in whatever order the translated labels happen to sort.
      */
     public static function getNavigationSort(): ?int
     {
-        $sort = FinCodexPlugin::get()->getNavigationSort();
-
-        return $sort === null ? null : $sort + 2;
+        return (FinCodexPlugin::get()->getNavigationSort() ?? 1) + 1;
     }
 
     public static function getNavigationLabel(): string
@@ -224,11 +222,18 @@ class HelpCoverage extends Page implements HasTable
                     ->modalDescription(__('fin-codex::fin-codex.coverage.attach.description'))
                     ->modalSubmitActionLabel(__('fin-codex::fin-codex.coverage.attach.submit'))
                     ->schema([
-                        Select::make('article')
+                        ModalTableSelect::make('article')
                             ->label(__('fin-codex::fin-codex.coverage.attach.article'))
                             ->helperText(__('fin-codex::fin-codex.coverage.attach.article_help'))
-                            ->options(fn (): array => $this->attachOptions())
-                            ->searchable()
+                            ->tableConfiguration(ArticlePickerTable::class)
+                            ->standaloneRecords(
+                                fn (): array => app(ArticlePicker::class)->rows(storedOnly: true),
+                                titleAttribute: 'title',
+                            )
+                            ->selectAction(fn (Action $action): Action => $action
+                                ->iconButton()
+                                ->modalHeading(__('fin-codex::fin-codex.coverage.attach.pick')))
+                            ->emptyStateSelectButton()
                             ->required(),
                     ])
                     ->action(fn (array $record, array $data) => $this->attach($record, (string) $data['article'])),
@@ -245,6 +250,7 @@ class HelpCoverage extends Page implements HasTable
             ])
             ->filters([
                 TernaryFilter::make('covered')
+                    ->native(false)
                     ->label(__('fin-codex::fin-codex.coverage.filters.covered'))
                     ->trueLabel(__('fin-codex::fin-codex.coverage.filters.covered_true'))
                     ->falseLabel(__('fin-codex::fin-codex.coverage.filters.covered_false')),
@@ -253,6 +259,7 @@ class HelpCoverage extends Page implements HasTable
                 // of the application, including the ones outside any panel.
                 SelectFilter::make('panel')
                     ->label(__('fin-codex::fin-codex.coverage.filters.panel'))
+                    ->native(false)->preload()->searchable(false)
                     ->options(fn (): array => app(CoverageReport::class)->panelOptions())
                     ->default(Filament::getCurrentPanel()?->getId()),
             ])
@@ -371,27 +378,6 @@ class HelpCoverage extends Page implements HasTable
     }
 
     /**
-     * Database articles only: a file article has no row to hang a context on,
-     * and guessing a slug for it is out of the question — the slug becomes the
-     * article's permanent identity and its file path. The helper text says to
-     * import the file first.
-     *
-     * @return array<string, string>
-     */
-    private function attachOptions(): array
-    {
-        $default = TranslationTabs::languages()['default'];
-
-        return collect(app(ContentSource::class)->all())
-            ->reject(fn (ArticleData $article): bool => $article->id === null)
-            ->mapWithKeys(fn (ArticleData $article): array => [
-                $article->slug => ($article->translation($default)->title
-                    ?? SlugPath::humanise(SlugPath::lastSegment($article->slug))).' ('.$article->slug.')',
-            ])
-            ->all();
-    }
-
-    /**
      * Add this screen's context to an article that already exists.
      *
      * The write goes through ArticleWriter like every other context row, so it
@@ -436,7 +422,7 @@ class HelpCoverage extends Page implements HasTable
             return;
         }
 
-        $title = $article->translations()->where('locale', TranslationTabs::languages()['default'])->value('title') ?? $slug;
+        $title = ArticleTitle::ofModel($article->load('translations'));
         $appended = app(ArticleWriter::class)->appendContext($article, $this->contextFor($record), $this->userId());
 
         Notification::make()

@@ -8,6 +8,7 @@ use FinityLabs\FinCodex\Tests\Fixtures\User;
 use FinityLabs\LinCodex\Models\Article;
 use FinityLabs\LinCodex\Models\ArticleTranslation;
 use FinityLabs\LinCodex\Models\Media;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
@@ -170,16 +171,100 @@ it('paints a thumbnail for an image and a placeholder for everything else', func
         ->and(substr_count($html, (string) __('fin-codex::fin-codex.media.no_preview')))->toBe(2);
 });
 
-it('offers no upload action on the media table', function (): void {
+it('opens an image full size from its thumbnail or its row, and offers no view for a document', function (): void {
     finCodexMediaDisk();
     $this->usesPanel('admin', finCodexMediaUser());
 
     $article = finCodexMediaArticle();
-    finCodexMediaRow($article, ['name' => 'shot.png']);
+    $image = finCodexMediaRow($article, ['name' => 'shot.png']);
+    $document = finCodexMediaRow($article, ['name' => 'guide.pdf', 'mime_type' => 'application/pdf']);
 
-    // Files arrive through the Markdown editor, which writes the reference in
-    // the same breath. A file uploaded here would be one nothing points at.
-    expect(finCodexMediaManager($article)->instance()->getTable()->getHeaderActions())->toBe([]);
+    $component = finCodexMediaManager($article)
+        ->assertTableActionVisible('view', $image)
+        ->assertTableActionHidden('view', $document);
+
+    // The thumbnail cell mounts the same action the row offers. The manager
+    // is lazy, so the rows only render once the table is loaded.
+    $component->loadTable();
+
+    expect($component->html())->toContain("mountTableAction(&#039;view&#039;, &#039;{$image->getKey()}&#039;)");
+
+    $component->mountTableAction('view', $image);
+
+    $action = $component->instance()->getMountedAction();
+    $content = $action?->getModalContent();
+
+    expect($action?->getName())->toBe('view')
+        ->and($action?->getModalHeading())->toBe('shot.png')
+        ->and($content?->toHtml())->toContain('data-fin-codex-media-view')
+        ->toContain(Storage::disk('media')->url($image->path));
+});
+
+it('downloads a file under its original name, and says so when the file is gone', function (): void {
+    finCodexMediaDisk();
+    $this->usesPanel('admin', finCodexMediaUser());
+
+    $article = finCodexMediaArticle();
+    $present = finCodexMediaRow($article, ['name' => 'shot.png']);
+    $gone = finCodexMediaRow($article, ['name' => 'lost.png'], withFile: false);
+
+    finCodexMediaManager($article)
+        ->callTableAction('download', $present)
+        ->assertFileDownloaded('shot.png');
+
+    finCodexMediaManager($article)
+        ->callTableAction('download', $gone)
+        ->assertNotified(__('fin-codex::fin-codex.media.download.missing', ['disk' => 'media']));
+});
+
+it('uploads a document into the dated directory, attributed to the article and the uploader', function (): void {
+    finCodexMediaDisk();
+    $user = finCodexMediaUser();
+    $this->usesPanel('admin', $user);
+
+    $article = finCodexMediaArticle();
+
+    finCodexMediaManager($article)
+        ->callTableAction('upload', data: ['file' => UploadedFile::fake()->create('guide.pdf', 12, 'application/pdf')])
+        ->assertHasNoTableActionErrors()
+        ->assertNotified(__('fin-codex::fin-codex.media.upload.done'));
+
+    $media = Media::query()->sole();
+
+    expect($media->name)->toBe('guide.pdf')
+        ->and($media->mime_type)->toBe('application/pdf')
+        ->and($media->disk)->toBe('media')
+        ->and($media->path)->toStartWith('codex/'.now()->format('Y/m').'/')
+        ->and($media->article_id)->toBe($article->id)
+        ->and($media->uploaded_by)->toBe($user->id)
+        ->and(Storage::disk('media')->exists($media->path))->toBeTrue();
+});
+
+it('refuses a file type outside the plugin document list', function (): void {
+    finCodexMediaDisk();
+    $this->usesPanel('admin', finCodexMediaUser());
+
+    $article = finCodexMediaArticle();
+
+    finCodexMediaManager($article)
+        ->callTableAction('upload', data: ['file' => UploadedFile::fake()->create('setup.exe', 12, 'application/x-msdownload')])
+        ->assertHasTableActionErrors(['file']);
+
+    expect(Media::query()->count())->toBe(0);
+});
+
+it('refuses to delete a document a body still links', function (): void {
+    finCodexMediaDisk();
+    $this->usesPanel('admin', finCodexMediaUser());
+
+    $article = finCodexMediaArticle();
+    $guide = finCodexMediaRow($article, ['name' => 'guide.pdf', 'mime_type' => 'application/pdf']);
+    finCodexMediaBody(finCodexMediaArticle('billing'), 'Read the [guide](/media/codex/guide.pdf) first.');
+
+    finCodexMediaManager($article)->callTableAction('delete', $guide);
+
+    expect(Media::query()->whereKey($guide->id)->exists())->toBeTrue();
+    Storage::disk('media')->assertExists($guide->path);
 });
 
 it('refuses to delete a file a body still shows, and names it', function (): void {

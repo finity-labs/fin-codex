@@ -74,9 +74,14 @@ it('renders the unsaved body of the active tab through the core renderer on the 
 
     $html = finCodexPreviewHtml($component);
 
+    // The body sits in .codex-article__body with its language, as in the
+    // drawer: that is the class the core stylesheet's article rules hang on.
     expect($html)
         ->toContain('data-fin-codex-preview')
         ->toContain('codex-root')
+        ->toContain('<div class="codex-article__body" lang="en">')
+        ->toContain('x-teleport="body"')
+        ->toContain('codex-lightbox__image')
         ->toContain('codex-callout codex-callout--warning')
         ->toContain('Before you delete')
         ->toContain('<ol class="codex-steps">')
@@ -150,8 +155,11 @@ it('never echoes a raw body', function (): void {
     $component = Livewire::test(CreateArticle::class)
         ->fillForm(['translations' => ['en' => ['body' => "Safe copy stays.\n\n<img src=x onerror=alert(1)>"]]]);
 
+    // The lightbox carries an <img> of its own, so the check is for the
+    // injected element's attributes, which the sanitiser strips.
     expect(finCodexPreviewHtml($component))
         ->toContain('Safe copy stays.')
         ->not->toContain('onerror')
-        ->not->toContain('<img');
+        ->not->toContain('src=x')
+        ->not->toContain('src="x"');
 });

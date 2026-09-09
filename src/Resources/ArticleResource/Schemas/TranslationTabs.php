@@ -15,13 +15,17 @@ use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Support\Icons\Heroicon;
+use FinityLabs\FinCodex\Editor\MediaPickerTable;
 use FinityLabs\FinCodex\Editor\MediaRecorder;
-use FinityLabs\FinCodex\Editor\OutdatedTranslations;
+use FinityLabs\FinCodex\Editor\MediaReferences;
 use FinityLabs\FinCodex\Editor\SlugRules;
+use FinityLabs\FinModalTableSelect\Components\ModalTableSelect;
 use FinityLabs\LinCodex\Enums\ArticleFormat;
 use FinityLabs\LinCodex\Models\Article;
+use FinityLabs\LinCodex\Models\Media;
 use FinityLabs\LinCodex\Settings\CodexSettings;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Str;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Spatie\LaravelSettings\Exceptions\MissingSettings;
 
@@ -45,14 +49,13 @@ use Spatie\LaravelSettings\Exceptions\MissingSettings;
  * it), a locale key survives a round trip, and the tab the admin was on is
  * still the open one after the copy action's confirmation modal.
  *
- * A tab carries at most one badge, and the two badges have different
- * sources. **Missing** is read from live form state, so it disappears the
- * moment the title and the body are both filled, without a save.
- * **Outdated** is read from the stored timestamps through
- * OutdatedTranslations, which knows nothing about the form: it is therefore
- * fixed for the whole page render and only clears on the next mount after a
- * save. That is the honest answer — until the tab is saved, the stored
- * translation really is older than the stored default one.
+ * A tab carries one badge at most: **Missing**, read from live form state,
+ * so it disappears the moment the title and the body are both filled,
+ * without a save. There is no "outdated" badge. OutdatedTranslations can
+ * still say that the default language was saved after a translation, but
+ * the editor does not show it: a corrected typo in the default text is
+ * not a reason to alarm every other language, and a badge that fires on
+ * a typo is soon ignored.
  */
 final class TranslationTabs
 {
@@ -60,7 +63,6 @@ final class TranslationTabs
     {
         $languages = self::languages();
         $default = $languages['default'];
-        $verdict = self::verdicts($record);
 
         $tabs = [];
 
@@ -71,50 +73,20 @@ final class TranslationTabs
 
             $tabs[$code] = Tab::make($label)
                 ->extraAttributes(['data-fin-codex-locale' => $code])
-                ->badge(static function (Get $get) use ($code, $isDefault, $verdict): ?string {
+                ->badge(static function (Get $get) use ($code, $isDefault): ?string {
                     if (blank($get("translations.{$code}.title")) || blank($get("translations.{$code}.body"))) {
                         return $isDefault ? null : __('fin-codex::fin-codex.editor.state.missing');
                     }
 
-                    if (! $isDefault && $verdict($code) === OutdatedTranslations::OUTDATED) {
-                        return __('fin-codex::fin-codex.editor.state.outdated');
-                    }
-
                     return null;
                 })
-                ->badgeColor(static fn (?string $badge): string => $badge === __('fin-codex::fin-codex.editor.state.outdated') ? 'warning' : 'gray')
+                ->badgeColor('gray')
                 ->schema(self::fields($code, $default, $record));
         }
 
         return Tabs::make('translations')
             ->livewireProperty('activeLocale')
             ->tabs($tabs);
-    }
-
-    /**
-     * One verdict lookup for the whole tab set, resolved on first use.
-     *
-     * Asking OutdatedTranslations per tab would cost one settings query and
-     * one translations query per language (CodexSettings is not a shared
-     * binding in a package install), and the create page must not query at
-     * all — it has no record to compare anything against.
-     *
-     * @return callable(string): ?string locale => PRESENT|MISSING|OUTDATED, null without a record
-     */
-    private static function verdicts(?Article $record): callable
-    {
-        /** @var array<string, string>|null $verdicts */
-        $verdicts = null;
-
-        return static function (string $code) use ($record, &$verdicts): ?string {
-            if ($record === null) {
-                return null;
-            }
-
-            $verdicts ??= app(OutdatedTranslations::class)->verdicts($record);
-
-            return $verdicts[$code] ?? null;
-        };
     }
 
     /**
@@ -193,8 +165,63 @@ final class TranslationTabs
                 ->label(__('fin-codex::fin-codex.editor.form.excerpt'))
                 ->rows(3),
             $isHtml ? self::htmlBody($code) : self::body($code)->required($isDefault)->requiredWith($isDefault ? [] : "translations.{$code}.title"),
+            ...($isHtml ? [] : [self::insertFile($code)]),
             self::copyFromDefault($code, $default),
         ];
+    }
+
+    /**
+     * A picker over every file already uploaded, for reuse across articles.
+     * An upload belongs to the article it was dropped into, but nothing
+     * stops a second article from using it — the media tab's delete
+     * refuses while any body references the file, whichever article's.
+     * Choosing one appends its Markdown to the body — an image as an image,
+     * a document as a link with the file name as its text — and clears the
+     * picker again; the field carries no state of its own into the save.
+     *
+     * Selection-only, so the field is its label line and the action on it;
+     * the chosen file shows up in the body, not in the picker.
+     */
+    private static function insertFile(string $code): ModalTableSelect
+    {
+        return ModalTableSelect::make("insert_file_{$code}")
+            ->label(__('fin-codex::fin-codex.editor.form.insert_file'))
+            ->standalone(Media::class, 'name')
+            ->tableConfiguration(MediaPickerTable::class)
+            ->selectionOnly()
+            ->selectAction(static fn (Action $action): Action => $action
+                ->link()
+                ->label(__('fin-codex::fin-codex.editor.form.insert_file_action'))
+                ->icon(Heroicon::OutlinedPaperClip)
+                ->modalHeading(__('fin-codex::fin-codex.editor.form.insert_file_heading')))
+            ->dehydrated(false)
+            ->afterStateUpdated(static function (mixed $state, Get $get, Set $set, ModalTableSelect $component) use ($code): void {
+                $component->state(null);
+
+                $media = is_scalar($state) ? Media::query()->find($state) : null;
+                $url = $media instanceof Media ? app(MediaReferences::class)->urlFor($media) : null;
+
+                if (! $media instanceof Media || $url === null) {
+                    return;
+                }
+
+                // Relative to the form root, like copyFromDefault(): neither
+                // Tabs nor Tab carries a state path of its own.
+                $body = $get("translations.{$code}.body");
+                $body = is_string($body) ? rtrim($body) : '';
+
+                $markdown = str_starts_with($media->mime_type, 'image/')
+                    ? '!['.self::linkText(Str::beforeLast($media->name, '.')).']('.$url.')'
+                    : '['.self::linkText($media->name).']('.$url.')';
+
+                $set("translations.{$code}.body", ($body === '' ? '' : $body."\n\n").$markdown."\n");
+            });
+    }
+
+    /** A name minus the brackets Markdown would misread. */
+    private static function linkText(string $name): string
+    {
+        return trim(str_replace(['[', ']'], '', $name));
     }
 
     /**
@@ -242,7 +269,7 @@ final class TranslationTabs
         return MarkdownEditor::make("translations.{$code}.body")
             ->label(__('fin-codex::fin-codex.editor.form.body'))
             ->fileAttachmentsDisk(static fn (): string => (string) config('lin-codex.media.disk', 'public'))
-            ->fileAttachmentsDirectory(static fn (): string => (string) config('lin-codex.media.directory', 'codex'))
+            ->fileAttachmentsDirectory(static fn (): string => app(MediaRecorder::class)->directory())
             ->fileAttachmentsAcceptedFileTypes(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif'])
             ->fileAttachmentsMaxSize(4096)
             ->saveUploadedFileAttachmentUsing(

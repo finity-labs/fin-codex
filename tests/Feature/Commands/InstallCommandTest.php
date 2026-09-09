@@ -1,6 +1,16 @@
 <?php
 
+use FinityLabs\FinCodex\Commands\InstallCommand;
+use FinityLabs\FinCodex\Pages\HelpCoverage;
+use FinityLabs\FinCodex\Pages\HelpSettings;
+use FinityLabs\FinCodex\Resources\ArticleResource;
 use FinityLabs\FinCodex\Tests\Fixtures\TempAppTree;
+use FinityLabs\LinCodex\Enums\Visibility;
+use FinityLabs\LinCodex\Models\Article;
+use FinityLabs\LinCodex\Models\ArticleContext;
+use FinityLabs\LinCodex\Models\ArticleTranslation;
+use FinityLabs\LinCodex\Settings\CodexSettings;
+use FinityLabs\LinSupport\Locale\InstalledLocales;
 use Illuminate\Support\Facades\Artisan;
 
 /*
@@ -175,4 +185,139 @@ it('publishes nothing of lin-codex', function () {
     expect($exitCode)->toBe(0)
         ->and($published)->toBe([])
         ->and(file_exists(config_path('lin-codex.php')))->toBeFalse();
+});
+
+/*
+ * The two steps that arrived with fin-support and lin-support: the
+ * languages, and the starter articles about the help system.
+ */
+
+it('configures the languages from --locales, with the application locale as the default', function () {
+    TempAppTree::writePanelProvider('admin');
+    config()->set('app.locale', 'de');
+
+    [$exitCode, $output] = finCodexRunCommand('fin-codex:install', ['--panel' => 'admin', '--locales' => 'en,de,hu', '--skip-starter-articles' => true]);
+
+    $settings = app(CodexSettings::class)->refresh();
+
+    expect($exitCode)->toBe(0)
+        ->and($output)->toContain('Languages configured: en, de, hu (default de)')
+        ->and(array_column($settings->languages, 'code'))->toBe(['en', 'de', 'hu'])
+        ->and($settings->languages[2])->toBe(['code' => 'hu', 'display' => 'Magyar', 'flag-icon' => 'hu'])
+        ->and($settings->default_locale)->toBe('de');
+});
+
+it('takes the installed locales without a prompt when --locales is absent and the run is not interactive', function () {
+    TempAppTree::writePanelProvider('admin');
+
+    [$exitCode] = finCodexRunCommand('fin-codex:install', ['--panel' => 'admin', '--skip-starter-articles' => true]);
+
+    expect($exitCode)->toBe(0)
+        ->and(array_column(app(CodexSettings::class)->refresh()->languages, 'code'))->toBe(InstalledLocales::detect());
+});
+
+it('imports the starter articles in the configured languages only, as database articles', function () {
+    TempAppTree::writePanelProvider('admin');
+
+    [$exitCode, $output] = finCodexRunCommand('fin-codex:install', ['--panel' => 'admin', '--locales' => 'en,de']);
+
+    $articles = Article::query()->orderBy('slug')->get();
+
+    expect($exitCode)->toBe(0)
+        ->and($output)->toContain('Starter articles imported in en, de')
+        ->and($articles->pluck('slug')->all())->toBe(InstallCommand::starterSlugs())
+        ->and($articles->pluck('source_path')->unique()->all())->toBe([null])
+        ->and(ArticleTranslation::query()->distinct()->pluck('locale')->sort()->values()->all())->toBe(['de', 'en'])
+        ->and(ArticleTranslation::query()->count())->toBe(22)
+        ->and($articles->firstWhere('slug', 'help/settings')?->contexts()->value('key'))->toBe(HelpSettings::class)
+        // The package's docs folder is not left behind as a content source.
+        ->and(config('lin-codex.sources.filesystem.paths'))->not->toContain(InstallCommand::starterDocsPath());
+});
+
+it('leaves existing starter articles alone on a repeated install', function () {
+    TempAppTree::writePanelProvider('admin');
+
+    finCodexRunCommand('fin-codex:install', ['--panel' => 'admin', '--locales' => 'en']);
+    Article::query()->where('slug', 'help')->sole()->translations()->where('locale', 'en')->update(['title' => 'Edited by the admin']);
+
+    [$exitCode, $output] = finCodexRunCommand('fin-codex:install', ['--panel' => 'admin', '--locales' => 'en']);
+
+    expect($exitCode)->toBe(0)
+        ->and($output)->toContain('already present')
+        ->and(Article::query()->count())->toBe(11)
+        ->and(ArticleTranslation::query()->where('locale', 'en')->where('title', 'Edited by the admin')->count())->toBe(1);
+});
+
+it('imports nothing with --skip-starter-articles, and nothing when no configured language has starter articles', function () {
+    TempAppTree::writePanelProvider('admin');
+
+    finCodexRunCommand('fin-codex:install', ['--panel' => 'admin', '--locales' => 'en', '--skip-starter-articles' => true]);
+
+    expect(Article::query()->count())->toBe(0);
+
+    [$exitCode, $output] = finCodexRunCommand('fin-codex:install', ['--panel' => 'admin', '--locales' => 'fr']);
+
+    expect($exitCode)->toBe(0)
+        ->and($output)->toContain('none of the configured languages match')
+        ->and(Article::query()->count())->toBe(0);
+});
+
+it('attaches the starter articles to their pages whatever the default language is', function () {
+    TempAppTree::writePanelProvider('admin');
+    config()->set('app.locale', 'hu');
+
+    [$exitCode] = finCodexRunCommand('fin-codex:install', ['--panel' => 'admin', '--locales' => 'hu,en']);
+
+    $settings = app(CodexSettings::class)->refresh();
+    $contexts = fn (string $slug): array => Article::query()->where('slug', $slug)->sole()->contexts()->pluck('key')->all();
+
+    expect($exitCode)->toBe(0)
+        // The host's own default is untouched by the import.
+        ->and($settings->default_locale)->toBe('hu')
+        ->and($contexts('help'))->toBe(['Filament\\Pages\\Dashboard'])
+        ->and($contexts('help/writing-articles'))->toBe([ArticleResource::class])
+        ->and($contexts('help/coverage'))->toBe([HelpCoverage::class])
+        ->and($contexts('help/settings'))->toBe([HelpSettings::class])
+        ->and($contexts('help/help-in-code'))->toBe([ArticleResource::class])
+        ->and(Article::query()->where('slug', 'help')->sole()->sort_order)->toBe(1)
+        ->and(Article::query()->where('slug', 'help/help-in-code')->sole()->sort_order)->toBe(5);
+});
+
+it('stamps the installed panel onto the starter articles\' pages, and leaves them panel-less without one', function () {
+    TempAppTree::writePanelProvider('admin');
+    TempAppTree::writePanelProvider('staff');
+
+    finCodexRunCommand('fin-codex:install', ['--panel' => 'staff', '--locales' => 'en']);
+
+    $panels = ArticleContext::query()->pluck('panel_id')->unique()->all();
+
+    expect(Article::query()->count())->toBe(11)
+        ->and($panels)->toBe(['staff'])
+        // The guest pages' articles are public, so a visitor to the staff login sees them.
+        ->and(Article::query()->where('slug', 'account/signing-in')->sole()->visibility)->toBe(Visibility::Public);
+
+    // Through the models, so the core's hooks cascade the contexts with the rows.
+    Article::query()->get()->each->delete();
+    TempAppTree::cleanup();
+
+    [$exitCode, $output] = finCodexRunCommand('fin-codex:install', ['--locales' => 'en']);
+
+    expect($exitCode)->toBe(0)
+        ->and($output)->toContain('No panel providers found')
+        ->and(Article::query()->count())->toBe(11)
+        ->and(ArticleContext::query()->whereNotNull('panel_id')->count())->toBe(0);
+});
+
+it('gives a visitor on the sign-in page the sign-in article, and nothing from the authenticated section', function () {
+    TempAppTree::writePanelProvider('admin');
+
+    finCodexRunCommand('fin-codex:install', ['--panel' => 'admin', '--locales' => 'en']);
+
+    // The harness's own admin panel, signed out: the drawer under the login
+    // form lists exactly the public article attached to Filament's login page.
+    $html = $this->get('/admin/login')->assertOk()->getContent();
+
+    expect($html)->toContain('data-codex-page-count="1"')
+        ->toContain('data-codex-page-article="account/signing-in"')
+        ->not->toContain('data-codex-page-article="help');
 });

@@ -25,7 +25,7 @@ use UnitEnum;
 
 /**
  * The help article editor: lin-codex's Article model as a Filament resource,
- * mounted at /{panel-path}/help-articles.
+ * mounted at /{panel-path}/codex-articles.
  *
  * FinCodexPlugin::register() puts this class on every panel that carries the
  * plugin, unless the host named its own through articleResource(); such an
@@ -45,7 +45,7 @@ class ArticleResource extends Resource
 {
     protected static ?string $model = Article::class;
 
-    protected static ?string $slug = 'help-articles';
+    protected static ?string $slug = 'codex-articles';
 
     protected static ?string $recordTitleAttribute = 'slug';
 
@@ -71,7 +71,7 @@ class ArticleResource extends Resource
 
     public static function getNavigationSort(): ?int
     {
-        return FinCodexPlugin::get()->getNavigationSort();
+        return FinCodexPlugin::get()->getNavigationSort() ?? 1;
     }
 
     public static function getModelLabel(): string

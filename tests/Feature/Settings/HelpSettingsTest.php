@@ -109,9 +109,9 @@ it('registers the override on admin and staff and the built-in page on portal, n
 it('answers on its own route for a signed-in admin', function (): void {
     finCodexSettingsUser();
 
-    $url = route('filament.admin.pages.help-settings');
+    $url = route('filament.admin.pages.codex-settings');
 
-    expect($url)->toContain('/admin/help-settings');
+    expect($url)->toContain('/admin/codex-settings');
 
     $this->get($url)->assertOk();
 });
@@ -120,17 +120,17 @@ it('files one slot after the article resource on every panel that sets a sort', 
     Filament::setCurrentPanel(Filament::getPanel('admin'));
 
     expect(AdminHelpSettings::getNavigationGroup())->toBe('Help')
-        ->and(AdminHelpSettings::getNavigationSort())->toBe(91);
+        ->and(AdminHelpSettings::getNavigationSort())->toBe(92);
 
     Filament::setCurrentPanel(Filament::getPanel('staff'));
 
     expect(StaffHelpSettings::getNavigationGroup())->toBe('Support')
-        ->and(StaffHelpSettings::getNavigationSort())->toBe(6);
+        ->and(StaffHelpSettings::getNavigationSort())->toBe(7);
 
     Filament::setCurrentPanel(Filament::getPanel('portal'));
 
     expect(HelpSettings::getNavigationGroup())->toBe(NavigationGroup::Help)
-        ->and(HelpSettings::getNavigationSort())->toBeNull();
+        ->and(HelpSettings::getNavigationSort())->toBe(3);
 });
 
 it('reads its navigation label and title from the lang files and follows the locale', function (): void {

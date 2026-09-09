@@ -118,7 +118,7 @@ it('produces no help category on a panel with the option off', function (): void
         ->not->toContain((string) __('fin-codex::fin-codex.search.category'));
 
     foreach (finCodexSearchAllResults($results) as $result) {
-        expect($result->url)->not->toContain('/admin/help-articles');
+        expect($result->url)->not->toContain('/admin/codex-articles');
     }
 });
 

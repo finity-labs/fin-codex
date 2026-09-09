@@ -79,25 +79,25 @@ it('reads navigation group and sort from the plugin options', function (): void 
     Filament::setCurrentPanel(Filament::getPanel('portal'));
 
     expect(ArticleResource::getNavigationGroup())->toBe(NavigationGroup::Help)
-        ->and(ArticleResource::getNavigationSort())->toBeNull();
+        ->and(ArticleResource::getNavigationSort())->toBe(1);
 });
 
 it('renders the list, create and edit pages on the admin panel', function (): void {
     finCodexResourceUser();
     $article = finCodexResourceArticle();
 
-    $this->get('/admin/help-articles')->assertOk()->assertSee('getting-started');
-    $this->get('/admin/help-articles/create')->assertOk();
-    $this->get('/admin/help-articles/'.$article->getRouteKey().'/edit')->assertOk();
+    $this->get('/admin/codex-articles')->assertOk()->assertSee('getting-started');
+    $this->get('/admin/codex-articles/create')->assertOk();
+    $this->get('/admin/codex-articles/'.$article->getRouteKey().'/edit')->assertOk();
 
-    expect(AdminHelpArticleResource::getUrl('index', panel: 'admin'))->toEndWith('/admin/help-articles');
+    expect(AdminHelpArticleResource::getUrl('index', panel: 'admin'))->toEndWith('/admin/codex-articles');
 });
 
 it('renders the list page on staff and portal', function (string $panel, string $guard): void {
     finCodexResourceUser($guard);
     finCodexResourceArticle();
 
-    $this->get('/'.$panel.'/help-articles')->assertOk()->assertSee('getting-started');
+    $this->get('/'.$panel.'/codex-articles')->assertOk()->assertSee('getting-started');
 })->with([
     'staff (override)' => ['staff', 'staff'],
     'portal (built-in)' => ['portal', 'web'],
@@ -107,7 +107,7 @@ it('keeps the help button and drawer on the article pages', function (): void {
     finCodexResourceUser();
     finCodexResourceArticle();
 
-    $html = $this->get('/admin/help-articles')->assertOk()->getContent();
+    $html = $this->get('/admin/codex-articles')->assertOk()->getContent();
 
     expect(substr_count((string) $html, 'data-codex-drawer'))->toBe(1)
         ->and(substr_count((string) $html, 'data-fin-codex-help-button="admin"'))->toBe(1);

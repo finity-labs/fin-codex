@@ -11,6 +11,7 @@ use FinityLabs\LinCodex\Models\ArticleTranslation;
 use FinityLabs\LinCodex\Models\Media;
 use FinityLabs\LinCodex\Settings\CodexSettings;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
@@ -117,6 +118,32 @@ beforeEach(function (): void {
     $settings->save();
 });
 
+it('stores a file under its own slugified name and numbers a repeat', function (): void {
+    Storage::fake('public');
+    $this->usesPanel('admin', finCodexUploadUser());
+    $directory = 'codex/'.now()->format('Y/m');
+
+    $first = finCodexUpload(Livewire::test(CreateArticle::class), finCodexUploadPng('Users Page (final).PNG'));
+    $second = finCodexUpload(Livewire::test(CreateArticle::class), finCodexUploadPng('Users Page (final).PNG'));
+
+    expect($first)->toBe("/storage/{$directory}/users-page-final.png")
+        ->and($second)->toBe("/storage/{$directory}/users-page-final-2.png")
+        ->and(Media::query()->pluck('name')->all())->toBe(['Users Page (final).PNG', 'Users Page (final).PNG']);
+});
+
+it('spreads uploads over the dated folders the core directory names', function (): void {
+    Storage::fake('public');
+    config()->set('lin-codex.media.directory', 'help/{Y}/{m}/{d}/');
+    $this->travelTo(Carbon::parse('2026-09-09 10:00:00'));
+    $this->usesPanel('admin', finCodexUploadUser());
+
+    $url = finCodexUpload(Livewire::test(CreateArticle::class), finCodexUploadPng());
+
+    expect($url)->toStartWith('/storage/help/2026/09/09/')
+        ->and(Media::query()->sole()->path)->toStartWith('help/2026/09/09/')
+        ->and(app(MediaRecorder::class)->directory())->toBe('help/2026/09/09');
+});
+
 it('stores an image on the lin-codex disk and directory and records the uploader', function (): void {
     Storage::fake('public');
     $user = finCodexUploadUser();
@@ -128,8 +155,9 @@ it('stores an image on the lin-codex disk and directory and records the uploader
 
     $media = Media::query()->sole();
 
+    // The core's default directory is codex/{Y}/{m}, expanded at upload time.
     expect($media->disk)->toBe('public')
-        ->and($media->path)->toStartWith('codex/')
+        ->and($media->path)->toStartWith('codex/'.now()->format('Y/m').'/')
         ->and($media->name)->toBe('shot.png')
         ->and($media->mime_type)->toBe('image/png')
         ->and($media->size)->toBeGreaterThan(0)

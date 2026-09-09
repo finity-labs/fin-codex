@@ -1,7 +1,6 @@
 <?php
 
 use Filament\Facades\Filament;
-use Filament\Forms\Components\Select;
 use Filament\Pages\Dashboard;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Schema;
@@ -13,6 +12,7 @@ use FinityLabs\FinCodex\Tests\Fixtures\Pages\AdminHelpCoverage;
 use FinityLabs\FinCodex\Tests\Fixtures\Resources\AdminHelpArticleResource;
 use FinityLabs\FinCodex\Tests\Fixtures\Resources\UserResource;
 use FinityLabs\FinCodex\Tests\Fixtures\User;
+use FinityLabs\FinModalTableSelect\Components\ModalTableSelect;
 use FinityLabs\LinCodex\Enums\ContextType;
 use FinityLabs\LinCodex\Models\Article;
 use FinityLabs\LinCodex\Models\ArticleContext;
@@ -442,10 +442,10 @@ it('offers only articles that live in the database, because a file has no row to
     $page->mountTableAction('attach', $key);
 
     $schema = $page->instance()->getMountedAction()->getSchema(Schema::make($page->instance()));
-    $select = $schema?->getComponent(fn (Component $component): bool => $component instanceof Select);
-    $options = $select instanceof Select ? $select->getOptions() : [];
+    $picker = $schema?->getComponent(fn (Component $component): bool => $component instanceof ModalTableSelect);
+    $rows = $picker instanceof ModalTableSelect ? $picker->getStandaloneRecordsIndex() : [];
 
-    expect(array_keys($options))->toContain('handbook')
+    expect(array_keys($rows))->toContain('handbook')
         ->not->toContain('intro')
         ->not->toContain('users/roles');
 });

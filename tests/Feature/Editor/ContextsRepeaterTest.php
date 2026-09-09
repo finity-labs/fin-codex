@@ -1,11 +1,17 @@
 <?php
 
+use Filament\Forms\Components\Repeater;
 use FinityLabs\FinCodex\Editor\ContextPicker;
+use FinityLabs\FinCodex\Editor\PageClassPickerTable;
+use FinityLabs\FinCodex\Editor\RoutePickerTable;
 use FinityLabs\FinCodex\Resources\ArticleResource\Pages\CreateArticle;
 use FinityLabs\FinCodex\Resources\ArticleResource\Pages\EditArticle;
 use FinityLabs\FinCodex\Resources\ArticleResource\Schemas\ContextsRepeater;
+use FinityLabs\FinCodex\Tests\Fixtures\Resources\AdminHelpArticleResource;
+use FinityLabs\FinCodex\Tests\Fixtures\Resources\StaffHelpArticleResource;
 use FinityLabs\FinCodex\Tests\Fixtures\Resources\UserResource;
 use FinityLabs\FinCodex\Tests\Fixtures\User;
+use FinityLabs\FinModalTableSelect\Components\ModalTableSelect;
 use FinityLabs\LinCodex\Contracts\ContentSource;
 use FinityLabs\LinCodex\Data\ArticleData;
 use FinityLabs\LinCodex\Enums\ArticleFormat;
@@ -84,6 +90,28 @@ function finCodexContextsFormRows(Testable $component): array
         static fn (array $row): array => [$row['panel_id'] ?? null, $row['type'] ?? null, $row['key'] ?? null, $row['url'] ?? null],
         array_values(is_array($rows) ? $rows : []),
     );
+}
+
+/**
+ * The key picker of one repeater row, rebuilt from the component's current
+ * form so a changed panel or type is reflected.
+ */
+function finCodexContextsKeyPicker(Testable $component, string $item): ModalTableSelect
+{
+    $repeater = $component->instance()->form->getComponent(
+        fn (mixed $schemaComponent): bool => $schemaComponent instanceof Repeater && $schemaComponent->getName() === 'contexts',
+    );
+
+    $picker = $repeater instanceof Repeater
+        ? $repeater->getChildSchema($item)?->getComponent(
+            fn (mixed $schemaComponent): bool => $schemaComponent instanceof ModalTableSelect && $schemaComponent->getName() === 'key',
+        )
+        : null;
+
+    expect($picker)->toBeInstanceOf(ModalTableSelect::class);
+
+    /** @var ModalTableSelect $picker */
+    return $picker;
 }
 
 it('saves picker rows in drag order with any-panel as null', function (): void {
@@ -189,17 +217,21 @@ it('cascades: changing the panel or type clears the key', function (): void {
         ->assertSet("data.contexts.{$item}.url", null);
 });
 
-it('shows the resolved label per row', function (): void {
+it('shows the picked page with its class, or its route name and path, under the label', function (): void {
     $user = finCodexContextsUser();
     $this->usesPanel('admin', $user);
 
+    // The class appears with single backslashes only where the row renders
+    // it — Livewire's snapshot carries it JSON-escaped — and only the
+    // rendered row puts a route name and its path on consecutive lines.
     Livewire::test(CreateArticle::class)
         ->fillForm(finCodexContextsState([
             ['panel_id' => 'admin', 'type' => 'class', 'key' => UserResource::class],
-            ['panel_id' => 'admin', 'type' => 'url', 'url' => '/admin/users/*'],
+            ['panel_id' => 'admin', 'type' => 'route', 'key' => 'filament.admin.resources.users.index'],
         ]))
-        ->assertSee('data-fin-codex-context-label="Users"', escape: false)
-        ->assertSee('data-fin-codex-context-label="/admin/users/*"', escape: false);
+        ->assertSee('Users')
+        ->assertSee(UserResource::class)
+        ->assertSee("filament.admin.resources.users.index\n/admin/users");
 });
 
 it('lists declared contexts read-only above the repeater and never saves them', function (): void {
@@ -258,4 +290,33 @@ it('makes the article resolvable by the saved context through the core', functio
 
     expect($html)->toContain('data-codex-page-article="billing"')
         ->toContain('data-codex-page-count="1"');
+});
+
+it('scopes the key picker rows and columns to the row panel and type', function (): void {
+    $user = finCodexContextsUser();
+    $this->usesPanel('admin', $user);
+
+    $component = Livewire::test(CreateArticle::class)
+        ->fillForm(finCodexContextsState([['panel_id' => 'admin', 'type' => 'class', 'key' => UserResource::class]]));
+
+    $item = array_key_first(data_get($component->instance()->data, 'contexts'));
+    $picker = finCodexContextsKeyPicker($component, $item);
+
+    expect($picker->getTableConfiguration())->toBe(PageClassPickerTable::class)
+        ->and(array_keys($picker->getStandaloneRecordsIndex()))->toContain(UserResource::class)
+        ->not->toContain(StaffHelpArticleResource::class)
+        ->and($picker->getOptionLabel())->toBe('Users');
+
+    $component->set("data.contexts.{$item}.panel_id", 'staff');
+    $picker = finCodexContextsKeyPicker($component, $item);
+
+    expect(array_keys($picker->getStandaloneRecordsIndex()))->toContain(StaffHelpArticleResource::class)
+        ->not->toContain(AdminHelpArticleResource::class);
+
+    $component->set("data.contexts.{$item}.type", 'route');
+    $picker = finCodexContextsKeyPicker($component, $item);
+
+    expect($picker->getTableConfiguration())->toBe(RoutePickerTable::class)
+        ->and(array_keys($picker->getStandaloneRecordsIndex()))->toContain('filament.staff.pages.dashboard')
+        ->not->toContain('filament.admin.resources.users.index');
 });

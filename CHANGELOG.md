@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-09
+
+### Added
+
+- `fin-codex:install` configures the help languages: `--locales=en,de` answers outright, an interactive run is asked with the application's installed locales pre-selected, and a non-interactive run takes the installed locales. The application locale stays the default when it is among them.
+- `fin-codex:install` imports eleven starter articles in the configured languages, as ordinary database articles attached to the pages they describe and to the panel the plugin was installed on: an authenticated Help section about the help system — getting help, writing articles, coverage, settings, and declaring help in code (the last attached to the article editor) — and a public Your account section for Filament's own screens — signing in, creating an account, a forgotten password, email verification and the profile page. `--skip-starter-articles` leaves them out; an existing slug is left alone.
+
+- A **Panels** column on the article list, one badge per panel the article's pages target, and a matching panel filter.
+- A **Download** action on the Media tab that streams the file through the application under its original name, on any disk.
+- **Upload file** on the Media tab, for the documents the body editor's image drop zone cannot take: PDF, Word, Excel, PowerPoint, plain text and CSV by default, replaced with `FinCodexPlugin::documentTypes()` and capped by `documentMaxSize()` (10 MB by default). Documents land in the same dated folders as images, attributed to the article and the uploader.
+- **Insert file** under each Markdown body: a modal table of every upload of any article — thumbnail, file name, type, the article it was uploaded to, size and date — that appends the chosen file's Markdown to the body, an image as an image and a document as a link, so a screenshot or a PDF is uploaded once and used wherever it is needed. A linked document downloads rather than opening in place, in the drawer and both previews, through lin-codex 0.2.2's download marking.
+- The three pickers that used to be long selects are modal tables, through [fin-modal-table-select](https://github.com/finity-labs/fin-modal-table-select): the related articles on the form and the coverage page's attach dialog pick from a table of title, slug, languages, source and published state; the key of a context row picks from a table of the pages the row's panel and type actually register — the page as the panel names it, the class or route name, whether it is a resource or a custom page, its path and its panels. Search and sort work on the columns. The picked rows show as stacked lists: the related articles with the slug under each title, the context key with the class, or the route name and its path, under the page's label; both lists wrap their lines rather than truncate, since a class or route name is long and the sidebar is not.
+
+### Changed
+
+- The resource and the two pages are mounted at `codex-articles`, `codex-settings` and `codex-coverage` instead of `help-articles`, `help-settings` and `help-coverage`: "help" is a word a host's own pages may want, "codex" is this package's. Route names follow (`filament.{panel}.resources.codex-articles.*`, `filament.{panel}.pages.codex-settings`, `filament.{panel}.pages.codex-coverage`); a stored `route:` context or a bookmark naming the old slugs needs updating, a `class:` context does not.
+- The Help group lists articles, coverage and settings in that order, settings last, with or without a `navigationSort()` on the plugin: without one they take sorts 1, 2 and 3 rather than the order the translated labels happen to sort in.
+- Uploads are stored under their own slugified name rather than a hash — `User Guide (final).pdf` becomes `user-guide-final.pdf`, a repeat in the same directory `-2` — so the URL an article links and the name a browser saves a document as both read like the upload. Files already stored keep their names.
+- Uploads spread over dated folders: `MediaRecorder::directory()` expands the `{Y}`, `{m}` and `{d}` placeholders lin-codex's `media.directory` may carry, and the core's default is now `codex/{Y}/{m}`. A stored image keeps the path it was written under. The default itself lives in lin-codex 0.2.2.
+- The editor names articles in the panel's language — the article list, the related-articles options and the coverage page's attach dialog — falling back to the default language when that translation is missing, and to the slug when there is no title at all.
+- The article list's filters sit behind Filament's filter button in the table header, Filament's default, instead of being spread above the table.
+- Every remaining select in the editor — format, visibility, icon, the language selects on the settings page, the panel and type of a context row, and every table filter — is Filament's styled select rather than the browser's own; the short ones preload their options and drop the search box.
+- Requires fin-modal-table-select ^1.1.1 and lin-codex ^0.2.2.
+
+### Fixed
+
+- Clicking an image in the article preview or the revision preview now opens it full size, as in the drawer: both previews carry the core lightbox, teleported to the body so Filament's slide-over cannot trap it. The Media tab opens an image the same way, from its thumbnail or from a new *View* row action; a file that is not an image offers neither.
+- The article preview and the revision preview rendered the body straight inside `.codex-root`, so none of the core stylesheet's article rules — headings, paragraphs, lists, code, quotes, images — applied and the text looked nothing like the drawer. Both now wrap the body in `.codex-article__body` with its language, as the drawer and the core partial do, and the revision title takes the article title style.
+
+### Removed
+
+- The **Outdated** badge on the language tabs, the amber ring in the list's languages column and the *Outdated language* filter. The verdict was a timestamp comparison, so correcting a typo in the default language marked every other language outdated, and restoring a revision did the same. A badge that fires on a typo is soon ignored. `Editor\OutdatedTranslations` still computes the verdict and the scope for a host that wants them; the editor shows translated or missing only.
+- The *Shown on* column of the contexts repeater. The picked page now carries its own label, key and path, so the column only repeated them.
+- The page-access trait, the installer's panel-provider and Shield edits, the policy registration and the panel-user resolver moved to [fin-support](https://github.com/finity-labs/fin-support) and [lin-support](https://github.com/finity-labs/lin-support); fin-codex requires fin-support ^0.1. `Traits\HasPageShieldSupport`, `Commands\Concerns\*`, `Panel\Concerns\ResolvesPanelUser` and `Auth\ArticlePolicyRegistration` are gone from this package; a host page that used the trait imports `FinityLabs\FinSupport\Pages\Concerns\HasPageShieldSupport` instead.
+
 ## [0.2.0] - 2026-09-09
 
 ### Fixed

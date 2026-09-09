@@ -127,3 +127,49 @@ it('resolves labels for every type and null for blanks', function (): void {
         ->and($picker->label('admin', 'class', ''))->toBeNull()
         ->and($picker->label('admin', 'route', 'filament.admin.auth.login'))->toBeNull();
 });
+
+it('describes class keys as picker rows with kind, path and panels', function (): void {
+    $admin = collect(finCodexPicker()->classRows('admin'))->keyBy('key');
+
+    expect($admin[UserResource::class])->toBe([
+        'key' => UserResource::class,
+        'label' => 'Users',
+        'kind' => 'Resource',
+        'uri' => '/admin/users',
+        'panel' => ['admin'],
+    ])
+        ->and($admin[Reports::class]['kind'])->toBe('Page')
+        ->and($admin[Reports::class]['uri'])->toBe('/admin/reports')
+        ->and($admin[Dashboard::class]['uri'])->toBe('/admin')
+        ->and($admin->keys()->all())->toBe(array_keys(finCodexPicker()->classKeys('admin')));
+
+    $union = collect(finCodexPicker()->classRows(null))->keyBy('key');
+
+    // A class several panels register is one row that lists them all and
+    // keeps the first panel's path.
+    expect($union[Dashboard::class]['panel'])->toContain('admin', 'staff', 'plain')
+        ->and($union[Dashboard::class]['uri'])->toBe('/admin')
+        ->and($union[StaffHelpArticleResource::class]['panel'])->toBe(['staff']);
+});
+
+it('describes route keys as picker rows with path and panel', function (): void {
+    Route::get('/fin-codex-scratch', fn (): string => '')->name('fin-codex-test.scratch');
+
+    $admin = collect(finCodexPicker()->routeRows('admin'))->keyBy('key');
+
+    expect($admin['filament.admin.resources.users.index']['uri'])->toBe('/admin/users')
+        ->and($admin['filament.admin.resources.users.index']['panel'])->toBe('admin')
+        ->and($admin['filament.admin.pages.reports']['label'])->toBe('Reports')
+        ->and($admin->keys()->all())->toBe(array_keys(finCodexPicker()->routeKeys('admin')));
+
+    $all = collect(finCodexPicker()->routeRows(null))->keyBy('key');
+
+    // A route outside Filament belongs to no panel.
+    expect($all['fin-codex-test.scratch'])->toBe([
+        'key' => 'fin-codex-test.scratch',
+        'label' => 'fin-codex-test.scratch',
+        'uri' => '/fin-codex-scratch',
+        'panel' => null,
+    ])
+        ->and($all['filament.staff.pages.dashboard']['panel'])->toBe('staff');
+});
