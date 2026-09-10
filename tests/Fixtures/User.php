@@ -7,6 +7,7 @@ namespace FinityLabs\FinCodex\Tests\Fixtures;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
 use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
 
 /**
  * Panel-capable user for the harness. Filament's Authenticate middleware
@@ -19,9 +20,15 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
  * on every request and SessionGuard::logout() writes the remember token,
  * actingAs() clears wasRecentlyCreated on the signed-in instance, and strict
  * models throw for an attribute a retrieved model does not carry.
+ *
+ * Notifiable because a real host's user model is, and the listener's database
+ * notification needs notifyNow() and the notifications() relation on the
+ * fixture; the base Foundation user carries neither.
  */
 final class User extends Authenticatable implements FilamentUser
 {
+    use Notifiable;
+
     protected $table = 'users';
 
     protected $guarded = [];

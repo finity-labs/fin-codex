@@ -10,21 +10,33 @@ use Filament\Actions\Action;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Pages\SettingsPage;
+use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Text;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use FinityLabs\FinCodex\Ai\AiSettings;
 use FinityLabs\FinCodex\FinCodexPlugin;
 use FinityLabs\FinSupport\Pages\Concerns\HasPageShieldSupport;
+use FinityLabs\LinCodex\Ai\AiAvailability;
+use FinityLabs\LinCodex\Ai\AiAvailabilityCheck;
+use FinityLabs\LinCodex\Ai\AiCallFailed;
+use FinityLabs\LinCodex\Ai\AiReason;
+use FinityLabs\LinCodex\Ai\Contracts\AiClient;
+use FinityLabs\LinCodex\Ai\ProviderCatalog;
 use FinityLabs\LinCodex\Enums\FallbackBehaviour;
 use FinityLabs\LinCodex\Models\ArticleRevision;
 use FinityLabs\LinCodex\Models\ArticleTranslation;
 use FinityLabs\LinCodex\Settings\CodexSettings;
+use FinityLabs\LinCodex\Translation\DefaultInstructions;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -33,7 +45,8 @@ use Spatie\LaravelSettings\Exceptions\MissingSettings;
 use UnitEnum;
 
 /**
- * The Codex settings screen: languages, reading behaviour and revisions.
+ * The Codex settings screen: languages, reading behaviour, revisions and AI
+ * translation.
  *
  * FinCodexPlugin::register() puts this class on every panel that carries the
  * plugin, unless the host named its own through settingsPage(); such an
@@ -59,6 +72,30 @@ class HelpSettings extends SettingsPage
     protected static ?string $slug = 'codex-settings';
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedCog6Tooth;
+
+    /**
+     * The AI half of the form state, carried from the save mutator to
+     * afterSave().
+     *
+     * Private on purpose: Livewire hydrates public properties only, and the
+     * value has to live for exactly one request — from the moment the AI keys
+     * are stripped out of the CodexSettings payload to the moment they are
+     * written to their own group.
+     *
+     * @var array<string, mixed>|null
+     */
+    private ?array $aiData = null;
+
+    /**
+     * The provider's tier models, once per provider per request.
+     *
+     * The model select, the model text input and the Test connection notice
+     * all ask for them on the same render; an empty array is the "the seam
+     * cannot list them" answer and is memoised too.
+     *
+     * @var array<string, array<string, string>>
+     */
+    private array $tierMemo = [];
 
     public static function getNavigationGroup(): string|UnitEnum|null
     {
@@ -108,8 +145,13 @@ class HelpSettings extends SettingsPage
     }
 
     /**
-     * Three stacked sections. defaultForm() already applies columns(2) and
+     * Four stacked sections. defaultForm() already applies columns(2) and
      * statePath('data'), so neither is repeated here.
+     *
+     * The fourth reads a second settings group, lin-codex-ai, which the three
+     * hooks at the bottom of this class fill and save; the AI keys live under
+     * one "ai" key in the form state so the CodexSettings payload keeps its
+     * own five.
      */
     public function form(Schema $schema): Schema
     {
@@ -213,7 +255,335 @@ class HelpSettings extends SettingsPage
                         ->maxValue(999)
                         ->required(),
                 ]),
+
+            Section::make(__('fin-codex::fin-codex.settings.ai.section'))
+                ->description(__('fin-codex::fin-codex.settings.ai.description'))
+                ->columnSpanFull()
+                ->columns(2)
+                ->extraAttributes(['data-fin-codex-ai' => 'section'])
+                // One section either way: without the optional SDK the page
+                // says what to install and nothing else about AI. The seam is
+                // a container singleton, so this is one call per render.
+                ->schema(fn (): array => app(AiClient::class)->installed()
+                    ? $this->aiFields()
+                    : [Text::make(__('fin-codex::fin-codex.settings.ai.install_note'))->columnSpanFull()]),
         ]);
+    }
+
+    /**
+     * The AI section's own components, in reading order: what the state of AI
+     * is, the switch, who translates, with which model, on which key, how long
+     * a call may take and what to tell the model.
+     *
+     * @return list<Component>
+     */
+    private function aiFields(): array
+    {
+        return [
+            // No memo: the closure has to re-read after save() re-renders the
+            // page, and a value cached during the pre-save render would report
+            // the state the admin has just changed away from.
+            Text::make(fn (): string => $this->aiStatus()->available
+                ? (string) __('fin-codex::fin-codex.settings.ai.status_available')
+                : $this->aiStatus()->label())
+                ->icon(fn (): Heroicon => $this->aiStatus()->available
+                    ? Heroicon::OutlinedCheckCircle
+                    : Heroicon::OutlinedExclamationTriangle)
+                ->color(fn (): string => $this->aiStatus()->available ? 'success' : 'warning')
+                ->extraAttributes(['data-fin-codex-ai' => 'status'])
+                ->columnSpanFull(),
+
+            Toggle::make('ai.enabled')
+                ->label(__('fin-codex::fin-codex.settings.ai.enabled'))
+                ->helperText(__('fin-codex::fin-codex.settings.ai.enabled_help'))
+                // Live so the required marks on the provider and the key follow
+                // the switch without a save.
+                ->live()
+                ->columnSpanFull(),
+
+            // A stored provider the installed SDK no longer offers renders as a
+            // blank select; required-while-enabled is what stops that save.
+            Select::make('ai.provider')
+                ->label(__('fin-codex::fin-codex.settings.ai.provider'))
+                ->native(false)->preload()->searchable(false)
+                ->options(fn (): array => app(AiClient::class)->providers())
+                ->live()
+                ->required(fn (Get $get): bool => (bool) $get('ai.enabled'))
+                ->afterStateUpdated(function (?string $state, Set $set): void {
+                    [$choice, $model] = $this->defaultTierFor((string) $state);
+
+                    $set('ai.model_choice', $choice);
+                    $set('ai.model', $model);
+                }),
+
+            // The view over ai.model: never dehydrated, so the concrete id in
+            // the text input below is the one and only stored value.
+            Select::make('ai.model_choice')
+                ->label(__('fin-codex::fin-codex.settings.ai.model'))
+                ->native(false)->preload()->searchable(false)
+                ->live()
+                ->dehydrated(false)
+                ->options(fn (Get $get): array => $this->tierOptions((string) $get('ai.provider')))
+                ->visible(fn (Get $get): bool => $this->tierOptions((string) $get('ai.provider')) !== [])
+                ->afterStateUpdated(fn (?string $state, Set $set) => $set('ai.model', $state === 'custom' ? null : $state)),
+
+            // The dehydrate-when-hidden call below is load-bearing: a hidden
+            // field is not dehydrated by default, so a chosen tier would be
+            // dropped on save the moment the select hides this input.
+            TextInput::make('ai.model')
+                ->label(__('fin-codex::fin-codex.settings.ai.model_id'))
+                ->maxLength(120)
+                ->dehydratedWhenHidden()
+                ->visible(fn (Get $get): bool => $get('ai.model_choice') === 'custom'
+                    || $this->tierOptions((string) $get('ai.provider')) === []),
+
+            TextInput::make('ai.api_key')
+                ->label(__('fin-codex::fin-codex.settings.ai.api_key'))
+                ->password()
+                ->revealable()
+                ->maxLength(255)
+                // Read from storage, never from the form: the field itself is
+                // blanked on fill and a blank save keeps what is stored.
+                ->placeholder(fn (): string => AiSettings::storedApiKey() !== null
+                    ? (string) __('fin-codex::fin-codex.settings.ai.key_stored')
+                    : (string) __('fin-codex::fin-codex.settings.ai.key_missing'))
+                ->helperText(fn (Get $get): ?string => ProviderCatalog::isKeyless((string) $get('ai.provider'))
+                    ? (string) __('fin-codex::fin-codex.settings.ai.ollama_help')
+                    : null)
+                // Asked for only when there is nothing else to reach the
+                // provider with: no key of its own in storage, and none in the
+                // SDK's own config for it.
+                ->required(function (Get $get): bool {
+                    $provider = (string) ($get('ai.provider') ?? '');
+
+                    return (bool) $get('ai.enabled')
+                        && $provider !== ''
+                        && ! ProviderCatalog::isKeyless($provider)
+                        && AiSettings::storedApiKey() === null
+                        && ! ProviderCatalog::envConfigured($provider);
+                })
+                ->suffixActions([$this->testConnectionAction(), $this->removeKeyAction()])
+                ->columnSpanFull(),
+
+            TextInput::make('ai.timeout')
+                ->label(__('fin-codex::fin-codex.settings.ai.timeout'))
+                ->helperText(__('fin-codex::fin-codex.settings.ai.timeout_help'))
+                ->numeric()
+                ->minValue(10)
+                ->maxValue(600)
+                ->required()
+                ->suffix(__('fin-codex::fin-codex.settings.ai.seconds')),
+
+            Textarea::make('ai.translation_instructions')
+                ->label(__('fin-codex::fin-codex.settings.ai.instructions'))
+                ->helperText(__('fin-codex::fin-codex.settings.ai.instructions_help'))
+                ->rows(8)
+                ->autosize()
+                ->columnSpanFull()
+                ->hintAction($this->resetInstructionsAction()),
+        ];
+    }
+
+    /**
+     * Whether AI translation can run, asked fresh every time.
+     *
+     * The core's one rule, never a second copy of it: the tab action hides on
+     * the same answer, and this page is the one place that says why.
+     */
+    private function aiStatus(): AiAvailability
+    {
+        return app(AiAvailabilityCheck::class)->check();
+    }
+
+    /**
+     * Put the package's own instructions back into the form.
+     *
+     * modal() is the switch, the same one the save button uses: with a custom
+     * heading Filament would otherwise open the box on every press, including
+     * the press that changes nothing because the text is already the default.
+     * Nothing is stored until the page is saved.
+     */
+    private function resetInstructionsAction(): Action
+    {
+        return Action::make('reset_instructions')
+            ->link()
+            ->label(__('fin-codex::fin-codex.settings.ai.reset_instructions'))
+            ->modal(fn (Get $get): bool => trim((string) $get('ai.translation_instructions')) !== trim(DefaultInstructions::TEXT))
+            ->requiresConfirmation()
+            ->modalHeading(__('fin-codex::fin-codex.settings.ai.reset_instructions_heading'))
+            ->modalDescription(__('fin-codex::fin-codex.settings.ai.reset_instructions_description'))
+            ->action(fn (Set $set) => $set('ai.translation_instructions', DefaultInstructions::TEXT));
+    }
+
+    /**
+     * One round trip to the provider with what the form holds right now.
+     *
+     * Independent of the toggle: the point of the button is to find out
+     * whether the settings work before switching AI on. It changes nothing on
+     * the form and nothing in storage — the key it sends is the typed one,
+     * else the stored one, else null, which is the seam's way of saying "use
+     * the SDK's own credential".
+     *
+     * The seam answers null or a reason key and never echoes a model, so the
+     * model named in the notice is the one that was sent: the form's id, else
+     * the provider's Default tier, else the plain "provider default" phrase
+     * for a seam that cannot list tiers.
+     */
+    private function testConnectionAction(): Action
+    {
+        return Action::make('test_connection')
+            ->label(__('fin-codex::fin-codex.settings.ai.test_connection'))
+            ->icon(Heroicon::OutlinedSignal)
+            ->action(function (Get $get): void {
+                $provider = (string) ($get('ai.provider') ?? '');
+
+                if ($provider === '') {
+                    Notification::make()
+                        ->warning()
+                        ->title(__('fin-codex::fin-codex.settings.ai.test_connection_no_provider'))
+                        ->send();
+
+                    return;
+                }
+
+                // Deferred wire:model values reach the server with the action
+                // call, so the key typed a moment ago is already here.
+                $typed = (string) ($get('ai.api_key') ?? '');
+                $model = trim((string) ($get('ai.model') ?? ''));
+
+                $reason = app(AiClient::class)->testConnection(
+                    $provider,
+                    $model !== '' ? $model : null,
+                    $typed !== '' ? $typed : AiSettings::storedApiKey(),
+                );
+
+                if ($reason !== null) {
+                    Notification::make()
+                        ->danger()
+                        ->title(__('fin-codex::fin-codex.settings.ai.test_connection_failed'))
+                        ->body(AiReason::label($reason))
+                        ->send();
+
+                    return;
+                }
+
+                Notification::make()
+                    ->success()
+                    ->title(__('fin-codex::fin-codex.settings.ai.test_connection_ok', [
+                        'provider' => app(AiClient::class)->providers()[$provider] ?? $provider,
+                        'model' => $model !== ''
+                            ? $model
+                            : ($this->tierModels($provider)['default'] ?? (string) __('fin-codex::fin-codex.settings.ai.provider_default')),
+                    ]))
+                    ->send();
+            });
+    }
+
+    /**
+     * Forget the stored key now, without saving the rest of the page.
+     *
+     * The placeholder beside it and this button's own visible() both read
+     * storage on every render, so the field flips to "no key stored" on the
+     * re-render that follows with no extra state to keep. write() seeds an
+     * unseeded group, so the action cannot fail on a host that never ran the
+     * AI settings migration — where it is hidden anyway, nothing being stored.
+     */
+    private function removeKeyAction(): Action
+    {
+        return Action::make('remove_key')
+            ->label(__('fin-codex::fin-codex.settings.ai.remove_key'))
+            ->icon(Heroicon::OutlinedTrash)
+            ->color('danger')
+            ->visible(fn (): bool => AiSettings::storedApiKey() !== null)
+            ->requiresConfirmation()
+            ->modalHeading(__('fin-codex::fin-codex.settings.ai.remove_key_heading'))
+            ->modalDescription(__('fin-codex::fin-codex.settings.ai.remove_key_description'))
+            ->action(function (): void {
+                AiSettings::write(['api_key' => null]);
+
+                Notification::make()
+                    ->success()
+                    ->title(__('fin-codex::fin-codex.settings.ai.remove_key_done'))
+                    ->send();
+            });
+    }
+
+    /**
+     * The provider's three tier models, or an empty list when the seam cannot
+     * name them — an unknown provider, or a fake seam in a test.
+     *
+     * @return array<string, string>
+     */
+    private function tierModels(string $provider): array
+    {
+        if ($provider === '') {
+            return [];
+        }
+
+        return $this->tierMemo[$provider] ??= $this->readTierModels($provider);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function readTierModels(string $provider): array
+    {
+        try {
+            return app(AiClient::class)->tierModels($provider);
+        } catch (AiCallFailed) {
+            return [];
+        }
+    }
+
+    /**
+     * The model select's options: the concrete ids with their tier as a hint,
+     * plus the Custom choice that reveals the text input.
+     *
+     * Two tiers that share an id are listed once, under the first tier that
+     * names them — the shape fin-sentinel's own model select has.
+     *
+     * @return array<string, string>
+     */
+    private function tierOptions(string $provider): array
+    {
+        $tiers = $this->tierModels($provider);
+
+        if ($tiers === []) {
+            return [];
+        }
+
+        $options = [];
+
+        foreach (['default', 'cheapest', 'smartest'] as $tier) {
+            $model = $tiers[$tier] ?? null;
+
+            if (! is_string($model) || $model === '' || isset($options[$model])) {
+                continue;
+            }
+
+            $options[$model] = $model.' ('.__('fin-codex::fin-codex.settings.ai.tier_'.$tier).')';
+        }
+
+        if ($options === []) {
+            return [];
+        }
+
+        $options['custom'] = (string) __('fin-codex::fin-codex.settings.ai.custom_model');
+
+        return $options;
+    }
+
+    /**
+     * What the model pair becomes when the provider changes: its Default tier,
+     * or nothing at all when the seam lists no tiers.
+     *
+     * @return array{0: string|null, 1: string|null}
+     */
+    private function defaultTierFor(string $provider): array
+    {
+        $default = $this->tierModels($provider)['default'] ?? null;
+
+        return is_string($default) && $default !== '' ? [$default, $default] : [null, null];
     }
 
     /**
@@ -449,6 +819,12 @@ class HelpSettings extends SettingsPage
      * keeps the form state plain scalars and mirrors the save mutator, so the
      * pair reads as one round trip rather than as one half of it.
      *
+     * The AI group joins the state under one "ai" key, and ONLY when the seam
+     * reports the SDK installed: Schema::fill() keeps every key it is handed,
+     * so merging it unconditionally would put AI state on a page that shows no
+     * AI section — and would break the form-state contract HelpSettingsTest
+     * pins at five keys.
+     *
      * @param  array<string, mixed>  $data
      *
      * @return array<string, mixed>
@@ -458,7 +834,54 @@ class HelpSettings extends SettingsPage
         $fallback = $data['fallback'] ?? null;
         $data['fallback'] = $fallback instanceof FallbackBehaviour ? $fallback->value : $fallback;
 
+        if (app(AiClient::class)->installed()) {
+            $data['ai'] = $this->aiFormData(AiSettings::values());
+        }
+
         return $data;
+    }
+
+    /**
+     * The AI group as the form wants it.
+     *
+     * The key is blanked, always: it is never echoed into the page, and a
+     * blank field on save means "keep the stored one". model_choice is the
+     * select's view over the stored model — the id itself when it is one of
+     * the provider's tiers, Custom when it is any other id, and the Default
+     * tier (written into ai.model too) when nothing is stored yet, so the
+     * preselected default saves as a concrete id. With no tier list there is
+     * no select, so no choice either.
+     *
+     * @param  array<string, mixed>  $values
+     *
+     * @return array<string, mixed>
+     */
+    private function aiFormData(array $values): array
+    {
+        $provider = $values['provider'] ?? null;
+        $tiers = $this->tierModels(is_string($provider) ? $provider : '');
+
+        $stored = $values['model'] ?? null;
+        $model = is_string($stored) && $stored !== '' ? $stored : null;
+        $choice = null;
+
+        if ($tiers !== []) {
+            if ($model === null) {
+                $model = $choice = $tiers['default'] ?? null;
+            } else {
+                $choice = in_array($model, $tiers, true) ? $model : 'custom';
+            }
+        }
+
+        return [
+            'enabled' => (bool) ($values['enabled'] ?? false),
+            'provider' => $provider,
+            'model_choice' => $choice,
+            'model' => $model,
+            'api_key' => '',
+            'timeout' => $values['timeout'] ?? 120,
+            'translation_instructions' => $values['translation_instructions'] ?? DefaultInstructions::TEXT,
+        ];
     }
 
     /**
@@ -471,6 +894,11 @@ class HelpSettings extends SettingsPage
      * to a clean list of {code, display, flag-icon}, which is exactly the shape
      * CodexSettings::$languages declares.
      *
+     * Stripping the "ai" key is mandatory rather than tidy: Settings::fill()
+     * assigns every key it is handed, so an AI payload left in place would
+     * land on CodexSettings as a dynamic property and a sixth row in the wrong
+     * group. It is stashed instead, and afterSave() writes it to its own.
+     *
      * @param  array<string, mixed>  $data
      *
      * @return array<string, mixed>
@@ -480,7 +908,59 @@ class HelpSettings extends SettingsPage
         $data['fallback'] = FallbackBehaviour::from((int) $data['fallback']);
         $data['revisions_keep'] = (int) $data['revisions_keep'];
 
+        $this->aiData = is_array($data['ai'] ?? null) ? $data['ai'] : null;
+
+        unset($data['ai']);
+
         return $data;
+    }
+
+    /**
+     * The second settings group, written by the one Save button.
+     *
+     * The vendor calls this hook after CodexSettings has been saved and before
+     * the transaction commits, so the two groups land together or not at all —
+     * including the wider transaction saveRemovingLanguages() opens around the
+     * whole save. Nothing happens on a page that never showed the section,
+     * because the fill mutator put no AI state there to stash.
+     */
+    protected function afterSave(): void
+    {
+        if ($this->aiData === null) {
+            return;
+        }
+
+        AiSettings::write($this->aiSettingsFromForm($this->aiData));
+    }
+
+    /**
+     * Form state as the AI settings class needs it.
+     *
+     * numeric() hands back a float and a toggle a bool-ish scalar, while the
+     * settings properties are typed int and bool; a blank key means "keep the
+     * stored one", which is read from storage rather than from the form; and
+     * model_choice is only ever a view over the model, so it is dropped even
+     * though it is not dehydrated.
+     *
+     * @param  array<string, mixed>  $ai
+     *
+     * @return array<string, mixed>
+     */
+    private function aiSettingsFromForm(array $ai): array
+    {
+        unset($ai['model_choice']);
+
+        $model = trim((string) ($ai['model'] ?? ''));
+        $key = $ai['api_key'] ?? null;
+
+        return [
+            'enabled' => (bool) ($ai['enabled'] ?? false),
+            'provider' => filled($ai['provider'] ?? null) ? (string) $ai['provider'] : null,
+            'model' => $model === '' ? null : $model,
+            'api_key' => blank($key) ? AiSettings::storedApiKey() : (string) $key,
+            'timeout' => (int) ($ai['timeout'] ?? 120),
+            'translation_instructions' => (string) ($ai['translation_instructions'] ?? DefaultInstructions::TEXT),
+        ];
     }
 
     /**

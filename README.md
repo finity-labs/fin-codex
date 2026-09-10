@@ -31,7 +31,8 @@ In-app help for Filament panels. Codex puts a help drawer in the topbar, shows a
 - PHP 8.2+
 - Laravel 11, 12 or 13
 - Filament 4 or 5
-- [`finity-labs/lin-codex`](https://github.com/finity-labs/lin-codex) ^0.2
+- [`finity-labs/lin-codex`](https://github.com/finity-labs/lin-codex) ^0.3.1
+- Optional, for AI translation: PHP 8.3+, Laravel 12+ and [`laravel/ai`](https://github.com/laravel/ai) ^0.11 — lin-codex's suggested SDK, documented in [its README](https://github.com/finity-labs/lin-codex#ai-translation)
 
 Codex is split across two packages, and it matters for where you configure things. **lin-codex** owns the content: the `codex_*` tables, the Markdown renderer, the filesystem source, visibility rules, search, translations and the JSON API. It ships its own config file, its own install command and its own Blade drawer, and it works in any Laravel app with no Filament at all.
 
@@ -63,10 +64,11 @@ The install command:
 - Offers to import eleven starter articles in the configured languages (they exist in en, de and hu): an authenticated **Help** section about the help system itself — getting help, writing articles, coverage, settings, and declaring help in code — and a public **Your account** section for Filament's own screens — signing in, creating an account, a forgotten password, email verification and the profile page (the profile article is authenticated). The account section is public on purpose: lin-codex hides an article whose ancestor the reader may not open, so a visitor on the sign-in page only sees articles whose whole path is public. They land as ordinary database articles, attached to the pages they describe and to the panel the plugin was installed on, and are yours to edit or delete. `--skip-starter-articles` leaves them out; a slug that already exists is left alone.
 - Offers to publish the translations and the views. Both default to **no** — a published copy stops receiving upstream changes.
 - Registers the article resource in `config/filament-shield.php` if [Filament Shield](#filament-shield-integration) is installed, and runs `shield:generate`.
+- Offers to set up [AI translation](#ai-translation), on PHP 8.3+ and Laravel 12+ only. If the SDK isn't there it offers to run `composer require laravel/ai:^0.11` for you and then stops, because the process that's already running can't autoload what Composer just wrote — start it again with `--ai-only`. Otherwise it asks for the provider, the model (the provider's default, cheapest and smartest models by name, or a custom id) and the API key (never for Ollama, optional when a key is already stored or `config/ai.php` carries one — leave it blank and the stored key is kept, exactly as a blank save on the settings page keeps it), tests the connection once, and saves the settings with AI switched on. A failed test saves nothing and says why.
 
 It never publishes or migrates anything belonging to lin-codex. That is `codex:install`'s job, and running it twice is safe.
 
-Pass `--force` to overwrite already-published files, and `--no-interaction` to take every default (the first panel it finds, the installed locales, the starter articles, no publishing, Shield wiring on if the config is there).
+Pass `--force` to overwrite already-published files, and `--no-interaction` to take every default (the first panel it finds, the installed locales, the starter articles, no publishing, Shield wiring on if the config is there, no AI step). `--ai` answers the AI question with yes, and `--ai-only` runs that one step and nothing else — which is what you want on an install that's already done.
 
 ### Register the plugin by hand
 
@@ -273,7 +275,38 @@ Contexts that come from a `HasHelp` class are listed above the repeater as read-
 
 One tab per language from the [settings](#settings). Each tab holds the title, excerpt and body for that language, plus **Copy from default language** for starting a translation from the current default text. A non-default tab is optional as a whole: it is saved when title and body are both filled, refused with a validation message when only one of them is, and deleted when both are emptied — after a snapshot while revisions are on, so the text it held is one restore away.
 
+**Translate with AI** sits beside Copy from default on every non-default tab of a Markdown article, on the create page as well as the edit page, while [AI translation](#ai-translation) is on and you may update the article — when the button isn't there, the settings page says why. It sends the default tab's title, excerpt and body exactly as they stand in the form, unsaved text included, and fills this tab with the answer. A tab that already holds text asks before it's replaced; an empty one just runs. Nothing is saved until you save the article yourself, and a failure leaves the tab as it was, with a notification naming the reason. Until the default language has both a title and a body the button is there but disabled, with a tooltip saying so.
+
+The call runs inside the request and waits for up to the timeout in the settings — 120 seconds by default — so your web server's own read timeout has to sit above it, or the translation dies before the model answers. nginx's `fastcgi_read_timeout` is 60 seconds out of the box; `Timeout` is Apache's and `request_terminate_timeout` php-fpm's. Raise those or lower the setting. For a provider slow enough to make that awkward, queue the work from the list instead: [Translate missing](#translating-from-the-list) runs the same translation in the background.
+
 A language is either translated or **Missing**, in the tabs and in the list's languages column, with a *Missing language* filter. There is no "outdated" marking: the editor cannot tell a corrected typo in the default text from a rewrite, and a badge that fires on both is soon ignored. `Editor\OutdatedTranslations` still computes which translations were saved before the default language, and the scope behind it, for a host that wants to surface that itself.
+
+### Translating from the list
+
+Two actions on the article list fill an article's gaps without opening the editor. Both hand the work to lin-codex's queued translation job instead of running it in the request, and both need [AI translation](#ai-translation) to be available — when it isn't, neither is there.
+
+**Translate missing** sits beside Edit on every article that still lacks a language and that you may update. Its modal lists only the languages that article is missing, all ticked, and queues one job for the ones you leave ticked; untick them all and the press is refused with a line under the list rather than a greyed button. The languages appear on the list when the job finishes. If the default language has no title or no body there is nothing to translate from — the button stays, and the modal says which language to fill in first and offers nothing to submit. (The editor greys its own button and hangs a tooltip on it. A table row has no room for a tooltip, and a button that simply isn't there explains nothing.) Only missing languages are ever offered: a translation that went stale because the default text changed afterwards is a judgement call about text that already exists, so refresh that one from the editor, where you can read both versions first.
+
+The same action in the toolbar does a selection at once. Tick the articles, and the modal offers every configured non-default language, all ticked, with the number of selected articles in its description. Each article then gets only the languages it still lacks among the ones you left ticked: one job per article that has something to do, and nothing at all for an article that lacks nothing. The summary names how many articles were queued and how many needed nothing, plus how many were skipped because you may not update them, when that happened. There is no limit on the selection.
+
+When a job finishes, the admin who queued it gets one Filament database notification per article. The title is a fixed label saying what happened — *Help article translated*, *Help article translation failed* or *Nothing to translate* — and never the article's own title, which would read as news about whatever the article is called. The body names the article in its first sentence, then the languages that arrived and the ones that failed with the reason for each. Green when everything landed, amber the moment one language fails, and an **Open article** button that opens the article's edit page on the panel you pressed the button in. An article deleted before the job finished is named by its id in that same sentence, and gets no button. The whole text — the fixed title, the article's own title, the language names and each failure's reason — renders in the language the panel was being read in when the button was pressed, not the application's. The press records both its locale and its panel in Laravel's context, which travels with the job and is restored on the worker, so a panel switched to English is answered in English however `app.locale` is configured and whatever queue driver you run, and a second panel on its own guard is answered through that guard and links its own pages rather than the default panel's. A job queued outside these two actions falls back to the locale the worker is running under and to your default panel.
+
+The bell needs two things from you, neither of which fin-codex checks for: Laravel's notifications table, and database notifications on the panel.
+
+```bash
+php artisan make:notifications-table
+php artisan migrate
+```
+
+```php
+$panel->databaseNotifications()
+```
+
+The job writes the notification itself, inside the job, so a panel without the bell loses nothing: the translations are written either way and the list's language flags catch up on the next load. A missing table, or a user model that can't be notified, is logged as an error with the article, the admin and the whole report, and the job still finishes. Every failed language is logged as a warning as well, bell or no bell — grep for `fin-codex: AI translation failed for some languages`.
+
+**The queue.** The job goes to your default queue connection and queue unless `lin-codex.ai.queue` names another. On the `sync` driver it runs inside the request, so the translation and the notification are both there by the time the page comes back — a press raises PHP's execution limit for the calls it is queuing, as the editor's own button does for its one call, but your web server's read timeout still applies, as [above](#languages). With a worker there is one thing to check: the job sizes its own timeout as languages × the settings timeout + 30 seconds, and the database and Redis drivers re-deliver a job that is still running once `retry_after` has passed — 90 seconds by default, well under that — so raise `retry_after` on the connection above the job's timeout or the same article gets translated twice at once. [lin-codex's README](https://github.com/finity-labs/lin-codex#missing-translations-and-the-queued-job) does the arithmetic.
+
+An HTML article is translated as it stands, tags included; the editor's advice to convert it to Markdown first applies here too. The tab action hides on an HTML article because its body is read-only in the editor — these two don't judge the format.
 
 ### Images
 
@@ -334,6 +367,29 @@ Deleting an *article* leaves its `codex_media` rows with a null `article_id`. Th
 **The current default language is the one removal the page refuses.** It reports twice — once on the language list and once on the default-language select — because those are the two fields that have to agree. Pick a different default first and the same edit goes through in one save.
 
 **Lowering "Revisions kept per language" prunes nothing retroactively.** It moves the ceiling from that point on. Stored revisions stay until new ones push them out, one article and one language at a time, inside the core's snapshot path. Saving settings never triggers a bulk delete.
+
+### AI translation
+
+A fourth section appears once `laravel/ai` is installed. Without it you get one note naming what it takes — PHP 8.3+, Laravel 12+ and `composer require laravel/ai` — and nothing else about AI.
+
+A status line at the top says whether translation can run right now: *AI translation is available* in green, or the reason in amber — the SDK is missing, the AI settings were never migrated, the switch is off, or there's no provider and no key. That line is the counterpart of the button in the editor. [Translate with AI](#languages) hides itself for those same four reasons, and so do the [Translate missing](#translating-from-the-list) actions on the article list — which queue lin-codex's translation job rather than translating in the request. This is the page that says which reason it is.
+
+The fields stay editable while the switch is off:
+
+- **Enable AI translation** puts the button on the language tabs.
+- **Provider** lists what lin-codex offers; [its README](https://github.com/finity-labs/lin-codex#providers-and-models) has the list and which providers translate reliably.
+- **Model** offers the provider's Default, Cheapest and Smartest models under their current ids, plus **Custom model…** and a field for any other id. Changing the provider resets it to the new provider's default. What's stored is always a concrete id.
+- **API key** is a revealable password field that never echoes what's stored: a stored key shows as the placeholder *A key is stored. Leave blank to keep it.*, and saving with the field blank keeps it. The key is encrypted at rest, in lin-codex's settings rather than in your `.env`.
+- **Timeout** is the seconds one translation call may take, 10 to 600, 120 by default. It applies to the editor button and to the queued job.
+- **Translation instructions** is the editable half of the prompt. The package's own rules run first and can't be switched off — return title, excerpt and body, keep code, links, image paths, callout markers and steps fences untranslated ([what the prompt keeps](https://github.com/finity-labs/lin-codex#what-the-prompt-keeps)) — and this text is added after them. **Reset to default** puts the packaged text back, asking first when you've changed it.
+
+Test connection and the translations use the key you type, else the stored key, else the one in `config/ai.php`.
+
+**Test connection**, the signal icon beside the key field, makes one round trip with whatever the form says right now. It names the provider and the model on success and the reason on failure, works whatever the switch says, and it never saves.
+
+**Remove stored key** deletes the stored key on the spot, without saving the rest of the page. The placeholder then reads *No key stored; the env key is used when set.* The button is hidden while there's nothing to remove.
+
+The AI values are written by the same **Save** as everything else on the page, into lin-codex's `lin-codex-ai` settings group. In a panel you never run that group's migration by hand — the first save creates its rows. (The migration step in [lin-codex's README](https://github.com/finity-labs/lin-codex#setup) is for hosts running the core without a panel.)
 
 ## Coverage and warnings
 
@@ -513,11 +569,13 @@ composer remove finity-labs/fin-codex
 
 It removes `FinCodexPlugin::make()` from every panel provider that carries it, drops the article resource from the Shield config, deletes the Shield permission rows, and offers to delete the published views and translations.
 
-**It does not touch your content.** Articles, translations, contexts, revisions, media files and the Codex settings all belong to lin-codex and survive removing the Filament layer. If you want those gone too:
+**It does not touch your content.** Articles, translations, contexts, revisions, media files, the Codex settings and the AI translation settings all belong to lin-codex and survive removing the Filament layer. If you want those gone too:
 
 ```bash
 php artisan codex:uninstall
 ```
+
+**Stored notifications stay too.** The completion notifications the translation job wrote are rows in your application's own `notifications` table, not in anything Codex owns, so neither command touches them. Delete them yourself if you want them gone.
 
 **It also leaves `app/Policies/ArticlePolicy.php` alone**, even though `shield:generate` may have written it. That is exactly the path where an application with its own `App\Models\Article` keeps its own policy, the command cannot tell the two apart, and deleting it is unrecoverable. Remove it yourself if it was ours.
 

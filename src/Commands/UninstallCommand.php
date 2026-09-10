@@ -26,9 +26,10 @@ use RecursiveIteratorIterator;
  * Shield permission rows for the resource and the two pages, and offers to
  * delete the two publish groups this package has.
  *
- * It does NOT touch a codex_* table, a Codex setting, a media file or a
- * revision. All of those are lin-codex's, they survive removing the Filament
- * layer, and `codex:uninstall` is the command that removes them.
+ * It does NOT touch a codex_* table, a Codex setting - the help settings or
+ * the AI translation ones - a media file or a revision. All of those are
+ * lin-codex's, they survive removing the Filament layer, and
+ * `codex:uninstall` is the command that removes them.
  *
  * It also leaves app/Policies/ArticlePolicy.php alone. shield:generate writes
  * that file, but a host that already owns an App\Models\Article owns a policy
@@ -66,6 +67,7 @@ class UninstallCommand extends Command
 
         $this->components->warn('Your articles, translations, contexts, revisions, media and Codex settings were NOT touched.');
         $this->line('  They belong to lin-codex and survive removing the Filament layer.');
+        $this->line('  The AI translation settings (the lin-codex-ai group) belong to lin-codex too and were left alone.');
         $this->line('  To remove those too, run: php artisan codex:uninstall');
 
         return self::SUCCESS;

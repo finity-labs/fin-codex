@@ -132,13 +132,18 @@ class TestCase extends Orchestra
 
     /**
      * Runs after the providers boot, so model listeners registered during the
-     * migrations survive. Host tables first (users, settings), then lin-codex's
-     * migrations by include()->up() in dependency order, then the settings seed.
+     * migrations survive. Host tables first (users, settings, notifications),
+     * then lin-codex's migrations by include()->up() in dependency order, then
+     * the two settings seeds: the core group and the AI group.
      * The users table carries a nullable password column because Laravel's
      * AuthenticateSession middleware reads getAuthPassword() on every panel
      * request, and a remember_token because SessionGuard::logout() writes
      * one; strict models turn either missing attribute into a
      * MissingAttributeException.
+     * The notifications table is Laravel's own shape because Phase 11's
+     * listener stores a Filament database notification for the queueing
+     * admin; a host that wants the bell runs `php artisan
+     * make:notifications-table` itself, and the package ships no migration.
      */
     protected function defineDatabaseMigrations(): void
     {
@@ -161,6 +166,15 @@ class TestCase extends Orchestra
             $table->unique(['group', 'name']);
         });
 
+        Schema::create('notifications', function (Blueprint $table): void {
+            $table->uuid('id')->primary();
+            $table->string('type');
+            $table->morphs('notifiable');
+            $table->text('data');
+            $table->timestamp('read_at')->nullable();
+            $table->timestamps();
+        });
+
         $database = dirname(__DIR__).'/vendor/finity-labs/lin-codex/database';
 
         foreach (self::PACKAGE_MIGRATIONS as $file) {
@@ -168,6 +182,7 @@ class TestCase extends Orchestra
         }
 
         (include $database.'/settings/create_codex_settings.php')->up();
+        (include $database.'/settings/create_codex_ai_settings.php')->up();
     }
 
     /**

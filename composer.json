@@ -23,7 +23,7 @@
         "filament/spatie-laravel-settings-plugin": "^4.0|^5.0",
         "finity-labs/fin-modal-table-select": "^1.1.1",
         "finity-labs/fin-support": "^0.1",
-        "finity-labs/lin-codex": "^0.2.2",
+        "finity-labs/lin-codex": "^0.3.1",
         "illuminate/contracts": "^11.28|^12.0|^13.0",
         "league/html-to-markdown": "^5.1",
         "php": "^8.2",
@@ -38,7 +38,7 @@
     },
     "suggest": {
         "bezhansalleh/filament-shield": "Optional page permissions for the settings and coverage pages (^4.0).",
-        "finity-labs/fin-ai": "AI settings UI for drafting, rewriting, and translating articles from the editor."
+        "laravel/ai": "AI translation in the editor (PHP 8.3+, Laravel 12+; lin-codex's optional SDK)."
     },
     "repositories": [
         {
@@ -88,7 +88,7 @@
     },
     "extra": {
         "branch-alias": {
-            "dev-main": "0.1.x-dev"
+            "dev-main": "0.4.x-dev"
         },
         "laravel": {
             "providers": [

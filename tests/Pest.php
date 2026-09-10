@@ -5,11 +5,18 @@ use FinityLabs\FinCodex\Coverage\SourceWarnings;
 use FinityLabs\FinCodex\Help\ArticleLookup;
 use FinityLabs\FinCodex\Help\DeclaredContexts;
 use FinityLabs\FinCodex\Panel\CurrentPage;
+use FinityLabs\FinCodex\Tests\Fixtures\FakeAiClient;
+use FinityLabs\FinCodex\Tests\Fixtures\User;
 use FinityLabs\FinCodex\Tests\TestCase;
+use FinityLabs\LinCodex\Ai\Contracts\AiClient;
 use FinityLabs\LinCodex\Contracts\ContentSource;
+use FinityLabs\LinCodex\Settings\CodexAiSettings;
 use FinityLabs\LinCodex\Settings\CodexSettings;
 use FinityLabs\LinCodex\Sources\FilesystemSource;
 use FinityLabs\LinCodex\View\PageHelpResolver;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Notifications\DatabaseNotification;
+use Spatie\LaravelSettings\Models\SettingsProperty;
 
 uses(TestCase::class)->in(__DIR__);
 
@@ -66,6 +73,84 @@ function enableRevisions(bool $enabled): void
     $settings = app(CodexSettings::class);
     $settings->revisions_enabled = $enabled;
     $settings->save();
+}
+
+/**
+ * Bind a fake AiClient for the rest of the test and hand it back.
+ *
+ * The client is the whole seam: AiAvailabilityCheck, ArticleTranslator, the
+ * settings page and the install command each resolve it from the container
+ * at call time, so this one bind answers for all of them. Without it a test
+ * gets the real client, which reports the SDK missing on every CI row.
+ */
+function finCodexFakeAi(?FakeAiClient $fake = null): FakeAiClient
+{
+    $fake ??= new FakeAiClient;
+
+    app()->instance(AiClient::class, $fake);
+
+    return $fake;
+}
+
+/**
+ * Switch AI translation on with lin-codex's own enableAi() values - anthropic,
+ * the provider's default model, the key sk-test and 120 seconds - plus
+ * $overrides.
+ *
+ * The values are saved, so a fresh app(CodexAiSettings::class) anywhere in
+ * the test reads them. The harness seeds the group, so nothing has to be
+ * reloaded first; on an unseeded group use AiSettings::write() instead.
+ *
+ * @param  array<string, mixed>  $overrides
+ */
+function finCodexEnableAi(array $overrides = []): void
+{
+    $settings = app(CodexAiSettings::class);
+
+    $values = array_merge([
+        'enabled' => true,
+        'provider' => 'anthropic',
+        'model' => null,
+        'api_key' => 'sk-test',
+        'timeout' => 120,
+    ], $overrides);
+
+    foreach ($values as $key => $value) {
+        $settings->{$key} = $value;
+    }
+
+    $settings->save();
+}
+
+/**
+ * Drop every stored AI setting and the resolved instance with it: the
+ * not_migrated state of a host that upgraded lin-codex without running the
+ * new settings migration. Forgetting the instance also drops one that
+ * AiSettings::write() may have bound.
+ */
+function finCodexAiUnseed(): void
+{
+    SettingsProperty::query()->where('group', 'lin-codex-ai')->delete();
+
+    app()->forgetInstance(CodexAiSettings::class);
+}
+
+/** How many settings rows the lin-codex-ai group holds right now. */
+function finCodexAiRows(): int
+{
+    return SettingsProperty::query()->where('group', 'lin-codex-ai')->count();
+}
+
+/**
+ * The stored Filament notifications of one fixture user, read with the panel
+ * bell's own query (data->format = filament), so a row a test reads here is a
+ * row the panel would show and a plain Laravel notification never counts.
+ *
+ * @return Collection<int, DatabaseNotification>
+ */
+function finCodexNotificationsFor(User $user): Collection
+{
+    return $user->notifications()->where('data->format', 'filament')->get();
 }
 
 /**

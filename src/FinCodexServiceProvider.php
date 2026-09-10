@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace FinityLabs\FinCodex;
 
 use Filament\Forms\Components\Field;
+use FinityLabs\FinCodex\Ai\NotifyTranslationFinished;
 use FinityLabs\FinCodex\Coverage\CoverageReport;
 use FinityLabs\FinCodex\Coverage\SourceWarnings;
 use FinityLabs\FinCodex\Forms\CodexHelp;
@@ -16,10 +17,12 @@ use FinityLabs\FinCodex\Panel\CurrentPage;
 use FinityLabs\FinCodex\Policies\ArticlePolicy;
 use FinityLabs\FinSupport\Auth\PolicyRegistrar;
 use FinityLabs\LinCodex\Contracts\ContentSource;
+use FinityLabs\LinCodex\Events\ArticleTranslated;
 use FinityLabs\LinCodex\Models\Article;
 use FinityLabs\LinCodex\Models\ArticleContext;
 use FinityLabs\LinCodex\Models\ArticleTranslation;
 use Illuminate\Contracts\Container\Container;
+use Illuminate\Support\Facades\Event;
 use Livewire\Livewire;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
@@ -82,6 +85,11 @@ class FinCodexServiceProvider extends PackageServiceProvider
      * macro on Field reaches TextInput, Select and every other field. Macros
      * are a static map: booting once is enough and no Filament boot order
      * matters.
+     *
+     * The listener that turns a finished translation run into the admin's
+     * notification is registered here because it belongs to the panel layer,
+     * not to the engine: lin-codex fires the event and says nothing about how
+     * an admin is told.
      */
     public function packageBooted(): void
     {
@@ -96,6 +104,8 @@ class FinCodexServiceProvider extends PackageServiceProvider
             // Macroable binds the closure to the field; PHPStan types $this as the provider.
             return $this->hintAction(CodexHelp::make($slug, $heading)); // @phpstan-ignore method.notFound
         });
+
+        Event::listen(ArticleTranslated::class, NotifyTranslationFinished::class);
     }
 
     /**

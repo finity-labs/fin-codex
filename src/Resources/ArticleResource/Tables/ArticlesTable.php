@@ -14,12 +14,16 @@ use Filament\Tables\Table;
 use FinityLabs\FinCodex\Editor\ArticleTitle;
 use FinityLabs\FinCodex\Editor\ContextPicker;
 use FinityLabs\FinCodex\Editor\OutdatedTranslations;
+use FinityLabs\FinCodex\Resources\ArticleResource\Actions\TranslateMissingAction;
+use FinityLabs\FinCodex\Resources\ArticleResource\Actions\TranslateMissingBulkAction;
 use FinityLabs\FinCodex\Resources\ArticleResource\Schemas\TranslationTabs;
+use FinityLabs\LinCodex\Ai\AiAvailabilityCheck;
 use FinityLabs\LinCodex\Enums\ArticleFormat;
 use FinityLabs\LinCodex\Enums\Visibility;
 use FinityLabs\LinCodex\Models\Article;
 use FinityLabs\LinCodex\Sources\FilesystemSource;
 use FinityLabs\LinCodex\Sources\SlugPath;
+use FinityLabs\LinCodex\Translation\MissingTranslations;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
@@ -31,18 +35,23 @@ use Illuminate\Database\Eloquent\Builder;
  * `getStateFromRecord()`, which `data_get()`s an attribute the query never
  * selected and throws.
  *
- * Two things are read once per table build and closed over rather than looked
- * up per row: the configured languages (one settings query per call) and the
- * `OutdatedTranslations` service (which memoises the same read per instance).
- * The translations themselves come from `with('translations')`, so the flags
- * column costs no query at all. The file slugs are the one per-row lookup;
- * `FilesystemSource` is a singleton that memoises its scan by path
+ * Four things are read once per table build and closed over rather than looked
+ * up per row: the configured languages (one settings query per call), the
+ * `OutdatedTranslations` service (which memoises the same read per instance),
+ * the `MissingTranslations` service (whose `candidates()` reads the languages
+ * once per instance, so one instance serves the whole render the way
+ * `OutdatedTranslations` does) and the AI availability bool
+ * (`AiAvailabilityCheck::available()` is a settings load, and Phase 10's rule
+ * is one load per build, handed down as a bool). The translations themselves
+ * come from `with('translations')`, so the flags column and the Translate
+ * missing gates cost no query at all. The file slugs are the one per-row
+ * lookup; `FilesystemSource` is a singleton that memoises its scan by path
  * fingerprint, and asking it per row is what lets a test point the source at
  * a different docs tree between two renders.
  *
- * No delete action and no bulk actions: deleting an article has consequences
- * the admin must see first, so it lives on the edit page behind 05-07's
- * confirmation modal.
+ * No delete action, on the row or in bulk: deleting an article has
+ * consequences the admin must see first, so it lives on the edit page behind
+ * 05-07's confirmation modal.
  */
 final class ArticlesTable
 {
@@ -51,6 +60,8 @@ final class ArticlesTable
         $languages = TranslationTabs::languages();
         $default = $languages['default'];
         $verdicts = app(OutdatedTranslations::class);
+        $missing = app(MissingTranslations::class);
+        $available = app(AiAvailabilityCheck::class)->available();
 
         /** @var array<string, string> $localeOptions */
         $localeOptions = array_column($languages['languages'], 'display', 'code');
@@ -166,6 +177,10 @@ final class ArticlesTable
             ])
             ->recordActions([
                 EditAction::make(),
+                TranslateMissingAction::make($available, $missing, $languages['languages'], $default),
+            ])
+            ->toolbarActions([
+                TranslateMissingBulkAction::make($available, $missing, $languages['languages'], $default),
             ]);
     }
 

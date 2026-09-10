@@ -4,11 +4,16 @@ declare(strict_types=1);
 
 namespace FinityLabs\FinCodex\Commands;
 
+use FinityLabs\FinCodex\Ai\AiSettings;
 use FinityLabs\FinCodex\FinCodexPlugin;
 use FinityLabs\FinCodex\Resources\ArticleResource;
 use FinityLabs\FinSupport\Console\Concerns\DiscoversPanelProviders;
 use FinityLabs\FinSupport\Console\Concerns\EditsPanelProviders;
 use FinityLabs\FinSupport\Console\Concerns\EditsShieldConfig;
+use FinityLabs\LinCodex\Ai\AiCallFailed;
+use FinityLabs\LinCodex\Ai\AiReason;
+use FinityLabs\LinCodex\Ai\Contracts\AiClient;
+use FinityLabs\LinCodex\Ai\ProviderCatalog;
 use FinityLabs\LinCodex\Models\Article;
 use FinityLabs\LinCodex\Models\ArticleContext;
 use FinityLabs\LinCodex\Models\ArticleTranslation;
@@ -21,7 +26,10 @@ use FinityLabs\LinSupport\Locale\InstalledLocales;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Schema;
 
+use function Laravel\Prompts\confirm;
+use function Laravel\Prompts\password;
 use function Laravel\Prompts\select;
+use function Laravel\Prompts\text;
 
 use Symfony\Component\Process\Process;
 use Throwable;
@@ -41,6 +49,15 @@ use Throwable;
  * has (translations and views), and the Filament Shield wiring for the
  * article resource. The panel-provider and Shield edits are fin-support's,
  * the language prompt is lin-support's.
+ *
+ * The AI translation step is the one optional extra, behind --ai (answer
+ * its question with yes) and --ai-only (run nothing else). It asks for the
+ * same three things the settings page asks for - provider, model and key -
+ * tests the connection once and saves them together, so a host can go from
+ * composer require to a working Translate with AI button without opening the
+ * panel. It offers to install the optional SDK when it is missing and then
+ * stops, because the running process cannot see a package composer has just
+ * written. A non-interactive run without either flag never mentions AI.
  *
  * Every step is safe to repeat. The plugin registration refuses a second
  * `FinCodexPlugin::make()`, the Shield insertion refuses a second
@@ -83,6 +100,8 @@ class InstallCommand extends Command
 
     protected bool $shieldConfigured = false;
 
+    protected bool $aiConfigured = false;
+
     /** @var list<string> */
     protected array $languages = [];
 
@@ -90,12 +109,20 @@ class InstallCommand extends Command
                             {--panel= : Panel ID to register the plugin in}
                             {--locales= : Comma-separated locale codes for the help articles (e.g. en,hu,de)}
                             {--skip-starter-articles : Do not import the starter articles about the help system}
+                            {--ai : Set up AI translation without asking}
+                            {--ai-only : Run only the AI translation step}
                             {--force : Overwrite existing published files}';
 
     protected $description = 'Install the Codex Filament plugin.';
 
     public function handle(): int
     {
+        if ((bool) $this->option('ai-only')) {
+            $this->configureAi();
+
+            return self::SUCCESS;
+        }
+
         $this->info('Installing the Codex Filament plugin...');
         $this->newLine();
 
@@ -105,6 +132,7 @@ class InstallCommand extends Command
         $this->importStarterArticles();
         $this->publishOptionalAssets();
         $this->configureShield();
+        $this->configureAi();
 
         $this->newLine();
         $this->info('Codex Filament plugin installed.');
@@ -118,6 +146,10 @@ class InstallCommand extends Command
 
         if ($this->shieldConfigured) {
             $nextSteps[] = ['Assign permissions', 'Give the new Codex permissions to your roles in Shield'];
+        }
+
+        if ($this->aiConfigured) {
+            $nextSteps[] = ['Translate with AI', 'AI translation is on: open a non-default language tab in the editor and press Translate with AI'];
         }
 
         $this->table(['Next steps', 'Details'], $nextSteps);
@@ -420,6 +452,237 @@ class InstallCommand extends Command
 
         // Pages are discovered, not configured, so they are a separate run.
         $this->line("  Help settings and Help coverage are discovered by Shield: php artisan shield:generate{$panelFlag} --page=HelpSettings,HelpCoverage");
+    }
+
+    /**
+     * The AI translation step: the version gate, the offer to install the
+     * optional SDK, and then the provider, model and key prompts.
+     *
+     * The order of the guards is the point. A run that never asked for AI -
+     * no flag and no interactive input to ask in - returns before anything is
+     * printed, so a scripted install reads exactly as it did before this step
+     * existed, on every PHP version. Whether the SDK is there is the seam's
+     * answer, never a question this package asks Composer itself: fin-codex
+     * names no SDK symbol anywhere, which is also what lets every row of the
+     * test suite run this step.
+     */
+    protected function configureAi(): void
+    {
+        $requested = (bool) $this->option('ai') || (bool) $this->option('ai-only');
+
+        if (! $requested && ! $this->input->isInteractive()) {
+            return;
+        }
+
+        if (! $this->aiVersionRequirementsMet()) {
+            return;
+        }
+
+        if (! $requested && ! confirm(label: 'Set up AI translation?', default: false)) {
+            return;
+        }
+
+        /*
+         * The settings live in lin-codex's table, which codex:install creates;
+         * without it the save at the end would throw a QueryException after
+         * three prompts and a round trip, so the check comes first.
+         */
+        if (! $this->hasArticlesTable()) {
+            $this->components->warn('The Codex settings are not reachable yet; run php artisan codex:install, then php artisan fin-codex:install --ai-only.');
+
+            return;
+        }
+
+        if (! app(AiClient::class)->installed()) {
+            $this->comment('The laravel/ai SDK is not installed; running composer require laravel/ai:^0.11 ...');
+
+            if (! $this->runComposerRequire('laravel/ai:^0.11')) {
+                return;
+            }
+
+            /*
+             * This process's autoloader cannot see a package Composer wrote a
+             * second ago, so the prompts belong to the next run.
+             */
+            $this->components->info('SDK installed.');
+            $this->line('  Run php artisan fin-codex:install --ai-only to choose the provider, model and key.');
+
+            return;
+        }
+
+        if (! $this->input->isInteractive()) {
+            $this->line('  AI translation needs an interactive run to choose the provider, model and key: php artisan fin-codex:install --ai-only');
+
+            return;
+        }
+
+        $this->promptAndSaveAi();
+    }
+
+    /**
+     * The three questions the settings page also asks - provider, model and
+     * key - one connection test, and one save.
+     *
+     * The tier list is the seam's, so the choices carry the concrete model
+     * ids rather than the word "Default", and a provider that answers with
+     * the same id for two tiers is offered once. A provider the SDK reaches
+     * over a URL is never asked for a key, and one that already has a key -
+     * stored here or in the SDK's own config - is asked for one it may leave
+     * blank, with the hint saying which of the two a blank answer keeps.
+     *
+     * Nothing is written before the connection answers: a run that fails the
+     * test leaves the host exactly as it found it.
+     */
+    private function promptAndSaveAi(): void
+    {
+        $client = app(AiClient::class);
+        $providers = $client->providers();
+
+        if ($providers === []) {
+            $this->components->error('The installed SDK offers no provider.');
+
+            return;
+        }
+
+        $provider = (string) select(
+            label: 'Which provider should translate the articles?',
+            options: $providers,
+            required: true,
+        );
+
+        try {
+            $tiers = $client->tierModels($provider);
+        } catch (AiCallFailed) {
+            $tiers = [];
+        }
+
+        $models = [];
+        $options = [];
+
+        foreach ($tiers as $tier => $id) {
+            if (in_array($id, $models, true)) {
+                continue;
+            }
+
+            $models[$tier] = $id;
+            $options[$tier] = ucfirst($tier)." ({$id})";
+        }
+
+        $options['custom'] = 'Custom model id';
+
+        $choice = (string) select(
+            label: 'Which model?',
+            options: $options,
+            default: $models === [] ? 'custom' : 'default',
+        );
+
+        $model = $choice === 'custom'
+            ? trim((string) text(label: 'Model id', required: true))
+            : $models[$choice];
+
+        $label = $providers[$provider];
+        $envConfigured = ProviderCatalog::envConfigured($provider);
+        $stored = AiSettings::storedApiKey();
+
+        $key = ProviderCatalog::isKeyless($provider) ? '' : (string) password(
+            label: "API key for {$label}",
+            // Asked for only when there is nothing else to reach the provider
+            // with: no key of its own in storage, and none in the SDK's own
+            // config for it. The settings page's own rule.
+            required: $stored === null && ! $envConfigured,
+            hint: $this->keyHint($stored !== null, $envConfigured),
+        );
+
+        /*
+         * A blank answer KEEPS the stored key, which is what the settings
+         * page's blank save does and what the prompt now says. Only a host
+         * with nothing stored writes null, and there null means "use the
+         * SDK's own credential". Re-running this step to change the model
+         * must not cost the host the key it is already translating with.
+         */
+        $apiKey = $key !== '' ? $key : $stored;
+
+        $this->comment('Testing the connection...');
+
+        $reason = $client->testConnection($provider, $model, $apiKey);
+
+        if ($reason !== null) {
+            $this->components->error('AI connection test failed: '.AiReason::label($reason));
+            $this->line('  Nothing was saved. Run php artisan fin-codex:install --ai-only to try again.');
+
+            return;
+        }
+
+        AiSettings::write([
+            'enabled' => true,
+            'provider' => $provider,
+            'model' => $model,
+            'api_key' => $apiKey,
+        ]);
+
+        $this->aiConfigured = true;
+        $this->info("  AI translation configured: {$label}, {$model}");
+        $this->line('  Open a non-default language tab in the editor and press Translate with AI.');
+    }
+
+    /**
+     * What a blank answer to the key prompt does, in the order the value is
+     * resolved in: keep the key already stored, else use the one the SDK's
+     * config carries for this provider. With neither, there is no hint - the
+     * prompt is required instead.
+     */
+    private function keyHint(bool $stored, bool $envConfigured): string
+    {
+        if ($stored) {
+            return 'Leave blank to keep the key already stored';
+        }
+
+        return $envConfigured ? 'Leave blank to use the key from config/ai.php' : '';
+    }
+
+    /**
+     * The optional SDK's floor, checked without touching the SDK. fin-codex
+     * itself runs on PHP 8.2 and Laravel 11, so this is a per-host answer.
+     */
+    private function aiVersionRequirementsMet(): bool
+    {
+        if (PHP_VERSION_ID >= 80300 && (int) explode('.', app()->version())[0] >= 12) {
+            return true;
+        }
+
+        $this->components->warn(sprintf(
+            'AI translation needs PHP 8.3+ and Laravel 12+. You are on PHP %s / Laravel %s.',
+            PHP_VERSION,
+            app()->version(),
+        ));
+        $this->line('  Skipped. Upgrade, then run php artisan fin-codex:install --ai-only.');
+
+        return false;
+    }
+
+    /**
+     * Install a package into the host through Composer, streaming its output.
+     * Protected because the command tests replace it: nothing in a test run
+     * may shell out to Composer.
+     */
+    protected function runComposerRequire(string $package): bool
+    {
+        $process = new Process(['composer', 'require', $package, '--no-interaction', '--ansi'], base_path());
+        $process->setTimeout(120);
+
+        $process->run(function (string $type, string $buffer): void {
+            $this->output->write($buffer);
+        });
+
+        if (! $process->isSuccessful()) {
+            $firstLine = strtok($process->getErrorOutput(), "\n") ?: 'unknown error';
+            $this->components->error("Composer require failed: {$firstLine}");
+            $this->line("  Run it yourself, then php artisan fin-codex:install --ai-only: composer require {$package}");
+
+            return false;
+        }
+
+        return true;
     }
 
     /** The package's own docs folder, one sub-folder per starter language. */

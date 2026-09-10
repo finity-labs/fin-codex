@@ -9,6 +9,7 @@ use Filament\Facades\Filament;
 use Filament\Forms\Components\MarkdownEditor;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
@@ -19,7 +20,9 @@ use FinityLabs\FinCodex\Editor\MediaPickerTable;
 use FinityLabs\FinCodex\Editor\MediaRecorder;
 use FinityLabs\FinCodex\Editor\MediaReferences;
 use FinityLabs\FinCodex\Editor\SlugRules;
+use FinityLabs\FinCodex\Resources\ArticleResource\Actions\TranslateWithAiAction;
 use FinityLabs\FinModalTableSelect\Components\ModalTableSelect;
+use FinityLabs\LinCodex\Ai\AiAvailabilityCheck;
 use FinityLabs\LinCodex\Enums\ArticleFormat;
 use FinityLabs\LinCodex\Models\Article;
 use FinityLabs\LinCodex\Models\Media;
@@ -47,7 +50,9 @@ use Spatie\LaravelSettings\Exceptions\MissingSettings;
  * Tabs::livewireProperty() keeps the active tab on the page itself, so the
  * server knows which language the admin is looking at (05-07's preview reads
  * it), a locale key survives a round trip, and the tab the admin was on is
- * still the open one after the copy action's confirmation modal.
+ * still the open one after a confirmation modal from the actions row under
+ * the body - Copy from default, and Translate with AI beside it while the
+ * installation can translate at all.
  *
  * A tab carries one badge at most: **Missing**, read from live form state,
  * so it disappears the moment the title and the body are both filled,
@@ -63,6 +68,21 @@ final class TranslationTabs
     {
         $languages = self::languages();
         $default = $languages['default'];
+
+        /*
+         * Once per build, never once per tab: each check loads the AI settings
+         * group, and every tab would ask the same question and get the same
+         * answer.
+         */
+        $available = app(AiAvailabilityCheck::class)->available();
+
+        $displays = [];
+
+        foreach ($languages['languages'] as $language) {
+            $displays[$language['code']] = $language['display'] !== '' ? $language['display'] : $language['code'];
+        }
+
+        $defaultDisplay = $displays[$default] ?? $default;
 
         $tabs = [];
 
@@ -81,7 +101,7 @@ final class TranslationTabs
                     return null;
                 })
                 ->badgeColor('gray')
-                ->schema(self::fields($code, $default, $record));
+                ->schema(self::fields($code, $default, $record, $available, $displays[$code] ?? $code, $defaultDisplay));
         }
 
         return Tabs::make('translations')
@@ -132,14 +152,16 @@ final class TranslationTabs
     }
 
     /**
-     * Title, excerpt and body of one locale, plus the copy-from-default
-     * action on every tab but the default one. On create, typing in the
-     * default-language title suggests the slug; on edit the record already
-     * has one and the title never touches it.
+     * Title, excerpt and body of one locale, plus the actions row - Copy from
+     * default first, Translate with AI second - on every tab but the default
+     * one, where both hide and the row goes with them. An HTML article keeps
+     * only the copy: there is no editable body to translate into. On create,
+     * typing in the default-language title suggests the slug; on edit the
+     * record already has one and the title never touches it.
      *
      * @return list<Action|Component>
      */
-    private static function fields(string $code, string $default, ?Article $record): array
+    private static function fields(string $code, string $default, ?Article $record, bool $aiAvailable, string $display, string $defaultDisplay): array
     {
         $isDefault = $code === $default;
 
@@ -166,7 +188,12 @@ final class TranslationTabs
                 ->rows(3),
             $isHtml ? self::htmlBody($code) : self::body($code)->required($isDefault)->requiredWith($isDefault ? [] : "translations.{$code}.title"),
             ...($isHtml ? [] : [self::insertFile($code)]),
-            self::copyFromDefault($code, $default),
+            Actions::make($isHtml
+                ? [self::copyFromDefault($code, $default)]
+                : [
+                    self::copyFromDefault($code, $default),
+                    TranslateWithAiAction::make($code, $default, $display, $defaultDisplay, $aiAvailable),
+                ]),
         ];
     }
 

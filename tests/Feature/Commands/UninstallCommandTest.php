@@ -131,6 +131,7 @@ it('never drops a codex table and never deletes an article', function () {
     expect(Article::query()->count())->toBe(2)
         ->and(Article::query()->pluck('slug')->all())->toEqualCanonicalizing(['intro', 'users'])
         ->and($output)->toContain('were NOT touched')
+        ->and($output)->toContain('lin-codex-ai')
         ->and($output)->toContain('codex:uninstall');
 });
 

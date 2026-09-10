@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-10
+
+### Added
+
+- An **AI translation** section on Help settings: the toggle, the provider, the model as the provider's Default, Cheapest or Smartest id or a custom one, an API key that is stored encrypted and never echoed back, the per-call timeout, and the editable half of the translation prompt with **Reset to default**. **Test connection** makes one round trip with whatever the form says right now, **Remove stored key** deletes the stored key on the spot, and the page's single **Save** writes both settings groups — creating the `lin-codex-ai` rows on the first save, so a panel host never runs that migration by hand.
+- `fin-codex:install --ai` answers the AI question with yes, and `--ai-only` runs that step and nothing else. The step gates on PHP 8.3 and Laravel 12, offers to install the optional SDK and then stops (the running process cannot autoload what Composer just wrote), and otherwise asks for the provider, the model and the key, tests the connection once and saves. A blank key keeps the one already stored and only writes nothing where nothing is stored, as a blank save on the settings page does.
+- **Translate with AI** beside Copy from default language on every non-default tab of a Markdown article, on the create page as well as the edit page. It fills the tab from the default tab's text exactly as it stands in the form, unsaved text included, asks first when the tab already holds something, and saves nothing.
+- **Translate missing** on the article list, as a row action beside Edit and as the table's first bulk action. The row action lists the languages that article lacks, pre-checked; the bulk action offers every configured non-default language and gives each selected article only the languages it lacks among the ticked ones. Both queue lin-codex's `TranslateArticle` job, one per article, and both need AI translation to be available and the `update` ability on the article. The bulk summary reports how many articles were queued, how many needed nothing, and how many were skipped because they may not be updated.
+- One Filament database notification per finished translation job, for the admin who queued it, under a fixed title that says what happened — *Help article translated*, *Help article translation failed* or *Nothing to translate* — with a body that names the article first and then the languages that arrived and the ones that failed with their reasons, and an **Open article** button. It renders in the language the panel was being read in when the button was pressed, and it belongs to the panel it was pressed in — the press records both its locale and its panel id in Laravel's context, and the job reads the admin through that panel's guard and links that panel's edit page — rather than in the application's language, through the default panel. The job writes it itself, inline, so it lands on any queue driver; a host with no `notifications` table keeps its translations and gets `fin-codex: could not store the translation notification` in the log instead, and any run with a failed language logs `fin-codex: AI translation failed for some languages`.
+- `settings.ai.*`, `editor.translate.*`, `editor.translate_missing.*` and `notification.*` translations in English, German and Hungarian.
+- README documentation for AI translation end to end: the optional SDK floor, the install step, the settings section, the tab action, the two list actions, the completion notification and one paragraph on the queue.
+
+### Changed
+
+- Requires `finity-labs/lin-codex` ^0.3.1, which hands the throwable behind an `unknown` reason to the host's error tooling once, at the seam that could not name it. Translate with AI no longer reports a stand-in of its own.
+- `laravel/ai` is the suggested AI package, in place of the postponed `finity-labs/fin-ai`. It stays optional — fin-codex requires nothing new and names no SDK class.
+- The article list carries a checkbox column while AI translation is available: the bulk action is the table's first, and the column goes away with it when AI is off.
+
 ## [0.3.0] - 2026-09-09
 
 ### Added
