@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace FinityLabs\FinCodex\Resources\ArticleResource\Actions;
 
 use Filament\Actions\Action;
-use Filament\Facades\Filament;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Notifications\Notification;
 use Filament\Support\Icons\Heroicon;
@@ -13,6 +12,7 @@ use FinityLabs\FinCodex\Ai\NotificationLocale;
 use FinityLabs\FinCodex\Ai\NotificationPanel;
 use FinityLabs\FinCodex\Auth\ArticleAbility;
 use FinityLabs\FinCodex\Editor\ArticleTitle;
+use FinityLabs\FinSupport\Panel\PanelUser;
 use FinityLabs\LinCodex\Jobs\TranslateArticle;
 use FinityLabs\LinCodex\Models\Article;
 use FinityLabs\LinCodex\Models\ArticleTranslation;
@@ -155,10 +155,9 @@ final class TranslateMissingAction
                     return;
                 }
 
-                // The guard hands back int|string|null; the job wants ?int, and
-                // a host on a non-numeric key has no author to attribute.
-                $id = Filament::auth()->id();
-                $userId = is_int($id) ? $id : (is_numeric($id) ? (int) $id : null);
+                // The author of every revision the run records: the panel
+                // user's key as the host model hands it over, int or string.
+                $userId = PanelUser::id();
 
                 // The language the admin is reading the panel in, and the
                 // panel itself, so the notification the finished job sends

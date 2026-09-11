@@ -54,7 +54,7 @@ final class MediaRecorder
      * it — rescued, because a disk that has no concept of per-object
      * visibility must not fail an upload that already succeeded.
      */
-    public function store(TemporaryUploadedFile $file, ?Article $article, ?int $userId): string
+    public function store(TemporaryUploadedFile $file, ?Article $article, int|string|null $userId): string
     {
         $disk = $this->disk();
         $directory = $this->directory();

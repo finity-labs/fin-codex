@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-09-11
+
+### Fixed
+
+- Apps whose user model uses a string primary key (`HasUuids`, `HasUlids`) got no author on an article, a revision or a media row. Every door into the editor narrowed the panel user's id to `?int` and threw a UUID or ULID away before it reached the write path. The id is now carried as the host model hands it over, so the create and edit pages, the file-article import, the Media tab upload, an image dropped into a body and both Translate missing actions all record the real author. The columns belong to lin-codex and are fixed there in 0.4.1; an install that ran its earlier migrations on a string-keyed user model has to alter them once, see the README's Upgrading section
+
+### Changed
+
+- The author id is typed `int|string|null` where it was `?int`, on `Editor\ArticleWriter`, `Editor\MediaRecorder::store()` and `Editor\FileArticleAdopter::adopt()`, and on the `userId()` method of the article pages, the file-articles table, the revisions relation manager and the Help coverage page. Host code that passes `?int` keeps working
+- Requires `finity-labs/lin-codex` ^0.4, the core release that lets a host switch the public help center off; nothing in fin-codex reads that switch yet
+- Requires `finity-labs/fin-support` ^0.1.1 for `Panel\PanelUser`, which resolves the panel user's key for the static closures of a schema or an action
+
 ## [0.4.0] - 2026-09-10
 
 ### Added

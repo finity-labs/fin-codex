@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace FinityLabs\FinCodex\Resources\ArticleResource\Actions;
 
 use Filament\Actions\BulkAction;
-use Filament\Facades\Filament;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Notifications\Notification;
 use Filament\Support\Icons\Heroicon;
 use FinityLabs\FinCodex\Ai\NotificationLocale;
 use FinityLabs\FinCodex\Ai\NotificationPanel;
 use FinityLabs\FinCodex\Auth\ArticleAbility;
+use FinityLabs\FinSupport\Panel\PanelUser;
 use FinityLabs\LinCodex\Jobs\TranslateArticle;
 use FinityLabs\LinCodex\Models\Article;
 use FinityLabs\LinCodex\Translation\MissingTranslations;
@@ -134,8 +134,7 @@ final class TranslateMissingBulkAction
                     // so these are Articles with their translations loaded.
                     /** @var EloquentCollection<int, Article> $records */
                     $picked = self::picked($data);
-                    $id = Filament::auth()->id();
-                    $userId = is_numeric($id) ? (int) $id : null;
+                    $userId = PanelUser::id();
 
                     NotificationLocale::remember();
                     NotificationPanel::remember();

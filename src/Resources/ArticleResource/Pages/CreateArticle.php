@@ -195,7 +195,7 @@ final class CreateArticle extends CreateRecord
     }
 
     /** The panel user's id, or null for a panel without an authenticated user. Public: the header actions attribute their writes to it. */
-    public function userId(): ?int
+    public function userId(): int|string|null
     {
         return $this->panelUserId();
     }

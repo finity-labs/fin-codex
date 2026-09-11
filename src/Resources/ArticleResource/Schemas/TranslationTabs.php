@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace FinityLabs\FinCodex\Resources\ArticleResource\Schemas;
 
 use Filament\Actions\Action;
-use Filament\Facades\Filament;
 use Filament\Forms\Components\MarkdownEditor;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -22,6 +21,7 @@ use FinityLabs\FinCodex\Editor\MediaReferences;
 use FinityLabs\FinCodex\Editor\SlugRules;
 use FinityLabs\FinCodex\Resources\ArticleResource\Actions\TranslateWithAiAction;
 use FinityLabs\FinModalTableSelect\Components\ModalTableSelect;
+use FinityLabs\FinSupport\Panel\PanelUser;
 use FinityLabs\LinCodex\Ai\AiAvailabilityCheck;
 use FinityLabs\LinCodex\Enums\ArticleFormat;
 use FinityLabs\LinCodex\Models\Article;
@@ -306,11 +306,9 @@ final class TranslationTabs
     }
 
     /** The panel user's id, or null for a panel without an authenticated user. */
-    private static function userId(): ?int
+    private static function userId(): int|string|null
     {
-        $id = Filament::auth()->id();
-
-        return is_numeric($id) ? (int) $id : null;
+        return PanelUser::id();
     }
 
     /**

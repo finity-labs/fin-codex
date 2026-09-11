@@ -66,7 +66,7 @@ final class RevisionsRelationManager extends RelationManager
      * outside the class, the way EditArticle::userId() serves its header
      * actions.
      */
-    public function userId(): ?int
+    public function userId(): int|string|null
     {
         return $this->panelUserId();
     }

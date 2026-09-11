@@ -58,7 +58,7 @@ final class FileArticleAdopter
      *                          failure) or when no row exists afterwards, which is what an
      *                          unknown slug looks like: the importer skips it silently
      */
-    public function adopt(string $slug, ?int $userId): Article
+    public function adopt(string $slug, int|string|null $userId): Article
     {
         if (! ArticleAbility::allows('import')) {
             throw new AuthorizationException(sprintf(

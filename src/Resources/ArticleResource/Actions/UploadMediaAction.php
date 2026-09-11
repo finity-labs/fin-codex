@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace FinityLabs\FinCodex\Resources\ArticleResource\Actions;
 
 use Filament\Actions\Action;
-use Filament\Facades\Filament;
 use Filament\Forms\Components\FileUpload;
 use Filament\Notifications\Notification;
 use Filament\Support\Icons\Heroicon;
@@ -13,6 +12,7 @@ use FinityLabs\FinCodex\Auth\ArticleAbility;
 use FinityLabs\FinCodex\Editor\MediaRecorder;
 use FinityLabs\FinCodex\FinCodexPlugin;
 use FinityLabs\FinCodex\Resources\ArticleResource\RelationManagers\MediaRelationManager;
+use FinityLabs\FinSupport\Panel\PanelUser;
 use FinityLabs\LinCodex\Models\Article;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 
@@ -67,9 +67,7 @@ final class UploadMediaAction
                     return;
                 }
 
-                $userId = Filament::auth()->id();
-
-                app(MediaRecorder::class)->store($file, $owner, is_numeric($userId) ? (int) $userId : null);
+                app(MediaRecorder::class)->store($file, $owner, PanelUser::id());
 
                 Notification::make()
                     ->success()

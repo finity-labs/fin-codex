@@ -224,7 +224,7 @@ final class FileArticlesTable extends Component implements HasActions, HasSchema
     }
 
     /** The panel user's id, or null for a panel without an authenticated user. */
-    private function userId(): ?int
+    private function userId(): int|string|null
     {
         return $this->panelUserId();
     }

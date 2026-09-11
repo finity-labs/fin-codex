@@ -491,7 +491,7 @@ class HelpCoverage extends Page implements HasTable
     }
 
     /** The panel user's id, the attribution of the attach and the import. */
-    private function userId(): ?int
+    private function userId(): int|string|null
     {
         return $this->panelUserId();
     }

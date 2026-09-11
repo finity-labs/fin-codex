@@ -147,14 +147,7 @@ class TestCase extends Orchestra
      */
     protected function defineDatabaseMigrations(): void
     {
-        Schema::create('users', function (Blueprint $table): void {
-            $table->id();
-            $table->string('name');
-            $table->string('email')->unique();
-            $table->string('password')->nullable();
-            $table->rememberToken();
-            $table->timestamps();
-        });
+        $this->createUsersTable();
 
         Schema::create('settings', function (Blueprint $table): void {
             $table->id();
@@ -183,6 +176,23 @@ class TestCase extends Orchestra
 
         (include $database.'/settings/create_codex_settings.php')->up();
         (include $database.'/settings/create_codex_ai_settings.php')->up();
+    }
+
+    /**
+     * The users table the panel guards authenticate against, and the one
+     * lin-codex's author columns are sized from. Overridden by
+     * UuidUserTestCase, which keys it by a string instead.
+     */
+    protected function createUsersTable(): void
+    {
+        Schema::create('users', function (Blueprint $table): void {
+            $table->id();
+            $table->string('name');
+            $table->string('email')->unique();
+            $table->string('password')->nullable();
+            $table->rememberToken();
+            $table->timestamps();
+        });
     }
 
     /**

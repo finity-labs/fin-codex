@@ -579,6 +579,16 @@ php artisan codex:uninstall
 
 **It also leaves `app/Policies/ArticlePolicy.php` alone**, even though `shield:generate` may have written it. That is exactly the path where an application with its own `App\Models\Article` keeps its own policy, the command cannot tell the two apart, and deleting it is unrecoverable. Remove it yourself if it was ours.
 
+## Upgrading
+
+### UUID or ULID user models
+
+Since 0.4.1 the editor stores the panel user's key as the host model hands it over, so an app whose user model uses `HasUuids` or `HasUlids` gets the real author on an article, a revision and a media row. Until then the id was narrowed to `?int` on the way in and every one of those was recorded as nobody.
+
+The columns belong to lin-codex. An install that ran its earlier migrations on a string-keyed user model has integer columns that cannot hold the key: follow [lin-codex's UUID or ULID user models note](../lin-codex/README.md#uuid-or-ulid-user-models) to alter the four columns once. Installs on the default integer user model need nothing.
+
+Host code that calls the editor's write path directly (`Editor\ArticleWriter`, `Editor\MediaRecorder`, `Editor\FileArticleAdopter`) now types the author `int|string|null`; widen anything that passes `?int` through.
+
 ## Known limitations
 
 Nothing here is speculative — these are the things this release knows it doesn't do, or hasn't checked.

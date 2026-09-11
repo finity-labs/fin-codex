@@ -143,7 +143,7 @@ final class NotifyTranslationFinished
      * press recorded none; null when the id belongs to nobody or the guard
      * names no provider at all.
      */
-    private function user(int $id, ?Panel $panel): ?Authenticatable
+    private function user(int|string $id, ?Panel $panel): ?Authenticatable
     {
         $guard = $panel?->getAuthGuard() ?? Filament::getAuthGuard();
 

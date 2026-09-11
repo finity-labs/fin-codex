@@ -61,7 +61,7 @@ final class ArticleWriter
      *
      * @throws InvalidArgumentException when the default-locale tab has no title or no body
      */
-    public function create(array $data, ?int $userId): Article
+    public function create(array $data, int|string|null $userId): Article
     {
         [$attributes, $translations, $contexts] = $this->split($data);
 
@@ -81,7 +81,7 @@ final class ArticleWriter
      *
      * @throws InvalidArgumentException when the default-locale tab has no title or no body
      */
-    public function update(Article $article, array $data, ?int $userId): Article
+    public function update(Article $article, array $data, int|string|null $userId): Article
     {
         [$attributes, $translations, $contexts] = $this->split($data);
 
@@ -121,7 +121,7 @@ final class ArticleWriter
      *
      * @param  array{panel_id?: string|null, type: string, key: string}  $context
      */
-    public function appendContext(Article $article, array $context, ?int $userId): bool
+    public function appendContext(Article $article, array $context, int|string|null $userId): bool
     {
         $type = ContextType::fromKey((string) $context['type']);
         $key = (string) $context['key'];
@@ -168,7 +168,7 @@ final class ArticleWriter
      * translation hook would otherwise record each HTML body a second time,
      * labelled Markdown. A Markdown article is returned untouched.
      */
-    public function convertToMarkdown(Article $article, ?int $userId): Article
+    public function convertToMarkdown(Article $article, int|string|null $userId): Article
     {
         if ($article->format === ArticleFormat::Markdown) {
             return $article;
@@ -201,7 +201,7 @@ final class ArticleWriter
      * is handed over rather than lazy-loaded: strict models refuse a lazy
      * load on a model that came out of a multi-row collection.
      */
-    private function snapshot(Article $article, ArticleTranslation $translation, ?int $userId): void
+    private function snapshot(Article $article, ArticleTranslation $translation, int|string|null $userId): void
     {
         $translation->setRelation('article', $article);
 
@@ -226,7 +226,7 @@ final class ArticleWriter
      * No attributing() scope: a visibility change records no revision (only
      * a format change does) and the delete cascades the revisions anyway.
      */
-    public function delete(Article $article, bool $keepChildrenHidden, ?int $userId): void
+    public function delete(Article $article, bool $keepChildrenHidden, int|string|null $userId): void
     {
         DB::transaction(function () use ($article, $keepChildrenHidden, $userId): void {
             if ($keepChildrenHidden) {
@@ -303,7 +303,7 @@ final class ArticleWriter
      *
      * @throws InvalidArgumentException when the default-locale tab has no title or no body, or any tab has only one of them
      */
-    private function writeTranslations(Article $article, array $tabs, ?int $userId): void
+    private function writeTranslations(Article $article, array $tabs, int|string|null $userId): void
     {
         $default = app(CodexSettings::class)->default_locale;
         $defaultRow = $this->translationRow($article, $default);
