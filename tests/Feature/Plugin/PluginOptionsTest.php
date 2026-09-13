@@ -1,7 +1,9 @@
 <?php
 
 use Filament\Facades\Filament;
+use Filament\Support\Icons\Heroicon;
 use Filament\View\PanelsRenderHook;
+use FinityLabs\FinCodex\Enums\HelpCenterPlacement;
 use FinityLabs\FinCodex\Enums\NavigationGroup;
 use FinityLabs\FinCodex\FinCodexPlugin;
 use FinityLabs\FinCodex\Tests\Fixtures\Pages\AdminHelpCoverage;
@@ -21,6 +23,11 @@ function pluginOptions(FinCodexPlugin $plugin): array
         'globalSearch' => $plugin->hasGlobalSearch(),
         'navigationGroup' => $plugin->getNavigationGroup(),
         'navigationSort' => $plugin->getNavigationSort(),
+        'helpCenterPlacement' => $plugin->getHelpCenterPlacement(),
+        'helpCenterNavigationGroup' => $plugin->getHelpCenterNavigationGroup(),
+        'helpCenterNavigationSort' => $plugin->getHelpCenterNavigationSort(),
+        'helpCenterNavigationLabel' => $plugin->getHelpCenterNavigationLabel(),
+        'helpCenterNavigationIcon' => $plugin->getHelpCenterNavigationIcon(),
         'articleResource' => $plugin->getArticleResource(),
         'settingsPage' => $plugin->getSettingsPage(),
         'coveragePage' => $plugin->getCoveragePage(),
@@ -38,6 +45,11 @@ function adminOptions(): array
         'globalSearch' => false,
         'navigationGroup' => 'Help',
         'navigationSort' => 90,
+        'helpCenterPlacement' => HelpCenterPlacement::Navigation,
+        'helpCenterNavigationGroup' => 'Reading',
+        'helpCenterNavigationSort' => 10,
+        'helpCenterNavigationLabel' => 'Manual',
+        'helpCenterNavigationIcon' => Heroicon::OutlinedAcademicCap,
         'articleResource' => AdminHelpArticleResource::class,
         'settingsPage' => AdminHelpSettings::class,
         'coveragePage' => AdminHelpCoverage::class,
@@ -55,6 +67,11 @@ function staffOptions(): array
         'globalSearch' => true,
         'navigationGroup' => 'Support',
         'navigationSort' => 5,
+        'helpCenterPlacement' => HelpCenterPlacement::Both,
+        'helpCenterNavigationGroup' => 'Library',
+        'helpCenterNavigationSort' => 20,
+        'helpCenterNavigationLabel' => 'Handbook',
+        'helpCenterNavigationIcon' => Heroicon::OutlinedBookmark,
         'articleResource' => StaffHelpArticleResource::class,
         'settingsPage' => StaffHelpSettings::class,
         'coveragePage' => StaffHelpCoverage::class,
@@ -70,6 +87,11 @@ it('starts from the documented defaults on a fresh instance', function (): void 
         'globalSearch' => false,
         'navigationGroup' => NavigationGroup::Help,
         'navigationSort' => null,
+        'helpCenterPlacement' => HelpCenterPlacement::UserMenu,
+        'helpCenterNavigationGroup' => null,
+        'helpCenterNavigationSort' => 1000,
+        'helpCenterNavigationLabel' => 'Help center',
+        'helpCenterNavigationIcon' => Heroicon::OutlinedBookOpen,
         'articleResource' => null,
         'settingsPage' => null,
         'coveragePage' => null,

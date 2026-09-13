@@ -19,6 +19,7 @@ use FinityLabs\LinCodex\Models\Article;
 use FinityLabs\LinCodex\Rendering\ArticlePath;
 use FinityLabs\LinCodex\Search\Searcher;
 use FinityLabs\LinCodex\Search\SearchHit;
+use Illuminate\Support\Facades\Gate;
 
 /*
  * GS-01 and GS-02. Help reaches the panel's own search field through one
@@ -300,11 +301,13 @@ it('adds no help category when nothing matches', function (): void {
 });
 
 /*
- * The row: the help-center URL, the section path as an unlabelled detail
- * (a list, so Filament prints no <dt>), and never the <mark>-carrying
- * snippet, whose markup would show as text in an escaped detail.
+ * The row: the panel's own Help Center page with the article's slug in the
+ * route parameter, the section path as an unlabelled detail (a list, so
+ * Filament prints no <dt>), and never the <mark>-carrying snippet, whose
+ * markup would show as text in an escaped detail. A path-like slug reaches
+ * the URL whole, because the route parameter accepts slashes.
  */
-it('builds the row from the article path and the section path', function (): void {
+it('builds the row from the panel\'s Help Center page and the section path', function (): void {
     $parent = Article::factory()->public()->published()
         ->withTranslation('en', ['title' => 'Guides', 'body' => 'The guide index.'])
         ->create(['slug' => 'guides']);
@@ -326,10 +329,11 @@ it('builds the row from the article path and the section path', function (): voi
     }
 
     expect($rows)->toHaveKeys(['Zebra handling', 'Zebra overview'])
-        ->and($rows['Zebra handling']->url)->toBe(ArticlePath::href('guides/zebra-handling'))
+        ->and($rows['Zebra handling']->url)->toBe('http://localhost/staff/help/guides/zebra-handling')
+        ->and($rows['Zebra handling']->url)->not->toContain('%2F')
         ->and($rows['Zebra handling']->details)->toBe(['Guides'])
         ->and(array_is_list($rows['Zebra handling']->details))->toBeTrue()
-        ->and($rows['Zebra overview']->url)->toBe(ArticlePath::href('zebra-overview'))
+        ->and($rows['Zebra overview']->url)->toBe('http://localhost/staff/help/zebra-overview')
         ->and($rows['Zebra overview']->details)->toBe([]);
 
     foreach ($rows as $result) {
@@ -363,12 +367,75 @@ it('carries one open-here action that opens the drawer in place', function (): v
     expect($action)->toBeInstanceOf(Action::class)
         ->and($action->getLabel())->toBe((string) __('fin-codex::fin-codex.search.open_here'))
         ->and($action->getUrl())->toBe(ArticlePath::href('users-overview'))
-        ->and($action->getUrl())->toBe($rows['Users overview']->url)
+        // The action and the row deliberately disagree now; the row below says why.
+        ->and($action->getUrl())->not->toBe($rows['Users overview']->url)
         ->and($action->getAlpineClickHandler())
         ->toContain("document.querySelector('[data-codex-drawer]')")
         ->toContain('$event.preventDefault()')
         ->toContain("new CustomEvent('codex:open'")
         ->toContain('users-overview');
+});
+
+/*
+ * GS-02's two URLs do different jobs and now have URL forms that match their
+ * jobs. The row navigates, like every other global-search result, so it is
+ * the absolute page URL, which does NOT match the SPA exception and therefore
+ * keeps Livewire navigation on a ->spa() panel. The action opens the drawer
+ * in place, so it keeps the core's root-relative link builder, which DOES
+ * match the exception and therefore keeps the drawer intercept winning the
+ * mousedown race. Swapping either form silently swaps the two behaviours.
+ */
+it('splits the navigating row URL from the open-here URL by their form', function (): void {
+    finCodexSearchSeedUsers();
+
+    $this->usesPanel('staff', finCodexSearchUser());
+
+    $rows = [];
+
+    foreach (finCodexSearchHelpResults(finCodexSearchWrapped('users')) as $result) {
+        $rows[(string) $result->title] = $result;
+    }
+
+    $row = $rows['Users overview'];
+    $action = $row->actions[0];
+
+    expect($row->url)->toBe('http://localhost/staff/help/users-overview')
+        ->and($action->getUrl())->toBe('/staff/help/users-overview')
+        ->and($action->getUrl())->toBe(ArticlePath::href('users-overview'))
+        ->and($action->getUrl())->not->toBe($row->url);
+});
+
+/*
+ * A viewer the Help Center page's own gate refuses would meet a 403 at the
+ * page, so the row sends them back to the page they are on with the slug as a
+ * codex query parameter; lin-codex's drawer glue reads that on init and opens
+ * the article, gated by ArticleGate alone. The category stays useful instead
+ * of vanishing. rawurlencode() turns the slash of a path-like slug into %2F,
+ * which the browser's own query-string parser gives back whole.
+ */
+it('sends a viewer the page gate refuses back to the page they are on', function (): void {
+    $parent = Article::factory()->public()->published()
+        ->withTranslation('en', ['title' => 'Users', 'body' => 'About users.'])
+        ->create(['slug' => 'users']);
+
+    Article::factory()->public()->published()->childOf($parent, 'roles')
+        ->withTranslation('en', ['title' => 'Roles', 'body' => 'About roles for users.'])
+        ->create();
+
+    $this->usesPanel('staff', finCodexSearchUser());
+    $this->get('/staff')->assertOk();
+
+    Gate::define('page_HelpCenter', fn (): bool => false);
+
+    $rows = [];
+
+    foreach (finCodexSearchHelpResults(finCodexSearchWrapped('roles')) as $result) {
+        $rows[(string) $result->title] = $result;
+    }
+
+    expect($rows)->toHaveKey('Roles')
+        ->and($rows['Roles']->url)->toBe('http://localhost/staff?codex=users%2Froles')
+        ->and($rows['Roles']->actions[0]->getUrl())->toBe(ArticlePath::href('users/roles'));
 });
 
 /*
@@ -486,5 +553,5 @@ it('still appends the help-center SPA exception after the boot split', function 
 
     expect($view->hasSpaMode())->toBeTrue()
         ->and($view->hasSpaMode('/admin/users'))->toBeTrue()
-        ->and($view->hasSpaMode('/help/users'))->toBeFalse();
+        ->and($view->hasSpaMode('/admin/help/users'))->toBeFalse();
 });

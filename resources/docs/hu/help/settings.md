@@ -1,7 +1,7 @@
 ---
 title: Súgóbeállítások
 excerpt: Nyelvek, az olvasói tartalék hiányzó fordításnál és a revíziók megőrzése.
-order: 4
+order: 5
 visibility: authenticated
 contexts:
   - class:FinityLabs\FinCodex\Pages\HelpSettings

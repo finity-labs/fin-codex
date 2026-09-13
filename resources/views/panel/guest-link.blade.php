@@ -1,9 +1,9 @@
-{{-- Rendered at SIMPLE_PAGE_END by HelpMount::guestLink(): Filament's link component under the auth form, no badge. The anchor keeps the help-center URL for a click without JavaScript; with it, the drawer opens in place. --}}
+{{-- Rendered at SIMPLE_PAGE_END by HelpMount::guestLink(): Filament's link component under the auth form, no badge. The href is an inert, same-page one so the link never throws and never leaves the page — a guest has no help center to be sent to, the public one being off and the panel's own sitting behind this very login. The drawer opens from the click handler. --}}
 <div data-fin-codex-guest-link="{{ $panelId }}"
      data-fin-codex-guard="{{ $guard }}"
      class="fin-codex-guest-link">
     <x-filament::link
-        :href="route('lin-codex.help-center')"
+        :href="$href"
         :icon="\Filament\Support\Icons\Heroicon::OutlinedQuestionMarkCircle"
         size="sm"
         data-codex-help-button

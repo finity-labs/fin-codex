@@ -1,7 +1,7 @@
 ---
 title: Declaring help in code
 excerpt: For developers — attaching articles to resources, pages and fields without the editor.
-order: 5
+order: 6
 visibility: authenticated
 contexts:
   - class:FinityLabs\FinCodex\Resources\ArticleResource

@@ -1,6 +1,9 @@
 <?php
 
+use Filament\Auth\Pages\Login;
+use Filament\Forms\Components\Field;
 use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\TextInput;
 use FinityLabs\FinCodex\Editor\ContextPicker;
 use FinityLabs\FinCodex\Editor\PageClassPickerTable;
 use FinityLabs\FinCodex\Editor\RoutePickerTable;
@@ -19,6 +22,7 @@ use FinityLabs\LinCodex\Enums\ContextType;
 use FinityLabs\LinCodex\Enums\Visibility;
 use FinityLabs\LinCodex\Models\Article;
 use FinityLabs\LinCodex\Models\ArticleContext;
+use Illuminate\Support\Str;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 
@@ -93,25 +97,55 @@ function finCodexContextsFormRows(Testable $component): array
 }
 
 /**
- * The key picker of one repeater row, rebuilt from the component's current
- * form so a changed panel or type is reflected.
+ * One visible field of one repeater row, rebuilt from the component's
+ * current form so a changed panel or type is reflected.
  */
-function finCodexContextsKeyPicker(Testable $component, string $item): ModalTableSelect
+function finCodexContextsRowField(Testable $component, string $item, string $name): mixed
 {
     $repeater = $component->instance()->form->getComponent(
         fn (mixed $schemaComponent): bool => $schemaComponent instanceof Repeater && $schemaComponent->getName() === 'contexts',
     );
 
-    $picker = $repeater instanceof Repeater
+    return $repeater instanceof Repeater
         ? $repeater->getChildSchema($item)?->getComponent(
-            fn (mixed $schemaComponent): bool => $schemaComponent instanceof ModalTableSelect && $schemaComponent->getName() === 'key',
+            fn (mixed $schemaComponent): bool => $schemaComponent instanceof Field && $schemaComponent->getName() === $name,
         )
         : null;
+}
+
+function finCodexContextsKeyPicker(Testable $component, string $item): ModalTableSelect
+{
+    $picker = finCodexContextsRowField($component, $item, 'key');
 
     expect($picker)->toBeInstanceOf(ModalTableSelect::class);
 
     /** @var ModalTableSelect $picker */
     return $picker;
+}
+
+function finCodexContextsUrlInput(Testable $component, string $item): TextInput
+{
+    $input = finCodexContextsRowField($component, $item, 'url');
+
+    expect($input)->toBeInstanceOf(TextInput::class);
+
+    /** @var TextInput $input */
+    return $input;
+}
+
+/** One context warning with its panel filled in, as the row renders it. */
+function finCodexContextsWarning(string $key, string $panel): string
+{
+    return (string) __('fin-codex::fin-codex.editor.contexts.'.$key, ['panel' => $panel]);
+}
+
+/**
+ * The half of a warning that names no panel, so a silent row is proved
+ * silent whichever panel a regression would have picked.
+ */
+function finCodexContextsWarningTail(string $key): string
+{
+    return trim(Str::after((string) __('fin-codex::fin-codex.editor.contexts.'.$key), ':panel'));
 }
 
 it('saves picker rows in drag order with any-panel as null', function (): void {
@@ -198,7 +232,7 @@ it('drops blank rows and requires a key or pattern', function (): void {
     ]);
 });
 
-it('cascades: changing the panel or type clears the key', function (): void {
+it('cascades: changing the type clears the key and the pattern', function (): void {
     $user = finCodexContextsUser();
     $this->usesPanel('admin', $user);
 
@@ -207,14 +241,111 @@ it('cascades: changing the panel or type clears the key', function (): void {
 
     $item = array_key_first(data_get($component->instance()->data, 'contexts'));
 
+    // A class key is never a route key, so the type select still clears both
+    // fields with nothing to ask.
     $component
         ->assertSet("data.contexts.{$item}.key", UserResource::class)
-        ->set("data.contexts.{$item}.panel_id", 'staff')
-        ->assertSet("data.contexts.{$item}.key", null)
-        ->set("data.contexts.{$item}.key", UserResource::class)
         ->set("data.contexts.{$item}.type", 'route')
         ->assertSet("data.contexts.{$item}.key", null)
         ->assertSet("data.contexts.{$item}.url", null);
+});
+
+it('keeps a key the panel just chosen still offers', function (): void {
+    $user = finCodexContextsUser();
+    $this->usesPanel('admin', $user);
+
+    // Both fixture panels register UserResource, so the move costs the author
+    // nothing and the row keeps what was picked.
+    $component = Livewire::test(CreateArticle::class)
+        ->fillForm(finCodexContextsState([['panel_id' => 'admin', 'type' => 'class', 'key' => UserResource::class]]));
+
+    $item = array_key_first(data_get($component->instance()->data, 'contexts'));
+
+    $component
+        ->set("data.contexts.{$item}.panel_id", 'staff')
+        ->assertSet("data.contexts.{$item}.key", UserResource::class)
+        ->assertNotNotified();
+});
+
+it('clears a key the panel just chosen does not offer, and says so', function (): void {
+    $user = finCodexContextsUser();
+    $this->usesPanel('admin', $user);
+
+    // The article resource is registered on the admin panel alone, and a
+    // filament.admin.* route name says which panel it belongs to outright.
+    $component = Livewire::test(CreateArticle::class)
+        ->fillForm(finCodexContextsState([
+            ['panel_id' => 'admin', 'type' => 'class', 'key' => AdminHelpArticleResource::class],
+            ['panel_id' => 'admin', 'type' => 'route', 'key' => 'filament.admin.resources.users.index'],
+        ]));
+
+    $items = array_keys(data_get($component->instance()->data, 'contexts'));
+
+    $component
+        ->set("data.contexts.{$items[0]}.panel_id", 'staff')
+        ->assertSet("data.contexts.{$items[0]}.key", null)
+        ->assertNotified(__('fin-codex::fin-codex.editor.contexts.key_cleared'));
+
+    $component
+        ->set("data.contexts.{$items[1]}.panel_id", 'staff')
+        ->assertSet("data.contexts.{$items[1]}.key", null)
+        ->assertNotified(__('fin-codex::fin-codex.editor.contexts.key_cleared'));
+});
+
+it('never clears a key when the row switches to any panel', function (): void {
+    $user = finCodexContextsUser();
+    $this->usesPanel('admin', $user);
+
+    // Any panel unions every panel, so it can never take a key away.
+    $component = Livewire::test(CreateArticle::class)
+        ->fillForm(finCodexContextsState([['panel_id' => 'admin', 'type' => 'class', 'key' => AdminHelpArticleResource::class]]));
+
+    $item = array_key_first(data_get($component->instance()->data, 'contexts'));
+
+    $component
+        ->set("data.contexts.{$item}.panel_id", ContextPicker::ANY_PANEL)
+        ->assertSet("data.contexts.{$item}.key", AdminHelpArticleResource::class)
+        ->assertNotNotified();
+});
+
+it('clears an auth page when the row moves from any panel to a named one', function (): void {
+    $user = finCodexContextsUser();
+    $this->usesPanel('admin', $user);
+
+    // The sign-in page belongs to the application rather than to one panel,
+    // so naming a panel takes it away: the binding that would hide the
+    // article everywhere cannot be written from this direction either.
+    $component = Livewire::test(CreateArticle::class)
+        ->fillForm(finCodexContextsState([['panel_id' => ContextPicker::ANY_PANEL, 'type' => 'class', 'key' => Login::class]]));
+
+    $item = array_key_first(data_get($component->instance()->data, 'contexts'));
+
+    $component
+        ->set("data.contexts.{$item}.panel_id", 'admin')
+        ->assertSet("data.contexts.{$item}.key", null)
+        ->assertNotified(__('fin-codex::fin-codex.editor.contexts.key_cleared'));
+});
+
+it('leaves a url pattern and an empty row alone when the panel changes', function (): void {
+    $user = finCodexContextsUser();
+    $this->usesPanel('admin', $user);
+
+    // A pattern is free text an author may well mean, and a row with nothing
+    // picked has nothing to lose and nothing to announce.
+    $component = Livewire::test(CreateArticle::class)
+        ->fillForm(finCodexContextsState([
+            ['panel_id' => 'admin', 'type' => 'url', 'url' => '/admin/users/*'],
+            ['panel_id' => 'admin', 'type' => 'class', 'key' => null],
+        ]));
+
+    $items = array_keys(data_get($component->instance()->data, 'contexts'));
+
+    $component
+        ->set("data.contexts.{$items[0]}.panel_id", 'staff')
+        ->set("data.contexts.{$items[1]}.panel_id", 'staff')
+        ->assertSet("data.contexts.{$items[0]}.url", '/admin/users/*')
+        ->assertSet("data.contexts.{$items[1]}.key", null)
+        ->assertNotNotified();
 });
 
 it('shows the picked page with its class, or its route name and path, under the label', function (): void {
@@ -319,4 +450,154 @@ it('scopes the key picker rows and columns to the row panel and type', function 
     expect($picker->getTableConfiguration())->toBe(RoutePickerTable::class)
         ->and(array_keys($picker->getStandaloneRecordsIndex()))->toContain('filament.staff.pages.dashboard')
         ->not->toContain('filament.admin.resources.users.index');
+});
+
+it('offers the auth pages to the live key picker under any panel only', function (): void {
+    $user = finCodexContextsUser();
+    $this->usesPanel('admin', $user);
+
+    // Plan 14.1-01's rule, proved through the form the author actually uses:
+    // a sign-in page belongs to the application, so a row naming one panel
+    // cannot bind it and never sees it.
+    $component = Livewire::test(CreateArticle::class)
+        ->fillForm(finCodexContextsState([['panel_id' => ContextPicker::ANY_PANEL, 'type' => 'class', 'key' => null]]));
+
+    $item = array_key_first(data_get($component->instance()->data, 'contexts'));
+
+    expect(array_keys(finCodexContextsKeyPicker($component, $item)->getStandaloneRecordsIndex()))
+        ->toContain(Login::class);
+
+    $component->set("data.contexts.{$item}.panel_id", 'admin');
+
+    expect(array_keys(finCodexContextsKeyPicker($component, $item)->getStandaloneRecordsIndex()))
+        ->not->toContain(Login::class)
+        ->toContain(UserResource::class);
+});
+
+it('says where the sign-in pages went, and only where there is something to say', function (): void {
+    $user = finCodexContextsUser();
+    $this->usesPanel('admin', $user);
+
+    $component = Livewire::test(CreateArticle::class)
+        ->fillForm(finCodexContextsState([['panel_id' => 'admin', 'type' => 'class', 'key' => UserResource::class]]));
+
+    $item = array_key_first(data_get($component->instance()->data, 'contexts'));
+
+    expect(finCodexContextsKeyPicker($component, $item)->getAction('select')?->getModalDescription())
+        ->toBe(__('fin-codex::fin-codex.editor.contexts.auth_any_panel'));
+
+    // Under Any panel the pages are right there in the list, and a route row
+    // never offered them in the first place.
+    $component->set("data.contexts.{$item}.panel_id", ContextPicker::ANY_PANEL);
+
+    expect(finCodexContextsKeyPicker($component, $item)->getAction('select')?->getModalDescription())
+        ->toBeNull();
+
+    $component
+        ->set("data.contexts.{$item}.panel_id", 'admin')
+        ->set("data.contexts.{$item}.type", 'route');
+
+    expect(finCodexContextsKeyPicker($component, $item)->getAction('select')?->getModalDescription())
+        ->toBeNull();
+});
+
+it('warns when an any-panel row holds a key only one panel registers', function (): void {
+    $user = finCodexContextsUser();
+    $this->usesPanel('admin', $user);
+
+    // Defect 3 of the UAT in one row: the help article resource lives on the
+    // admin panel alone, so "any panel" widens the binding to nothing.
+    $component = Livewire::test(CreateArticle::class)
+        ->fillForm(finCodexContextsState([
+            ['panel_id' => ContextPicker::ANY_PANEL, 'type' => 'class', 'key' => AdminHelpArticleResource::class],
+        ]))
+        ->assertSee(finCodexContextsWarning('key_panel_warning', 'admin'));
+
+    $item = array_key_first(data_get($component->instance()->data, 'contexts'));
+
+    // Naming that panel settles it, and the key was never taken away or the
+    // save blocked while the row disagreed with itself.
+    $component
+        ->set("data.contexts.{$item}.panel_id", 'admin')
+        ->assertSet("data.contexts.{$item}.key", AdminHelpArticleResource::class)
+        ->assertDontSee(finCodexContextsWarningTail('key_panel_warning'));
+});
+
+it('warns about a panel-bound route under any panel and leaves a panel-less one alone', function (): void {
+    $user = finCodexContextsUser();
+    $this->usesPanel('admin', $user);
+
+    Livewire::test(CreateArticle::class)
+        ->fillForm(finCodexContextsState([
+            ['panel_id' => ContextPicker::ANY_PANEL, 'type' => 'route', 'key' => 'filament.admin.resources.users.index'],
+        ]))
+        ->assertSee(finCodexContextsWarning('key_panel_warning', 'admin'));
+
+    // A route belonging to no panel is precisely what any panel is for, and
+    // the picker's own em dash already says so.
+    Livewire::test(CreateArticle::class)
+        ->fillForm(finCodexContextsState([
+            ['panel_id' => ContextPicker::ANY_PANEL, 'type' => 'route', 'key' => 'filament.exports.download'],
+        ]))
+        ->assertDontSee(finCodexContextsWarningTail('key_panel_warning'));
+});
+
+it('stays quiet under any panel for a shared class, an auth page and an empty row', function (): void {
+    $user = finCodexContextsUser();
+    $this->usesPanel('admin', $user);
+
+    // Two panels register the resource, the sign-in page carries no panel at
+    // all, and a row with nothing picked has nothing to disagree about.
+    Livewire::test(CreateArticle::class)
+        ->fillForm(finCodexContextsState([
+            ['panel_id' => ContextPicker::ANY_PANEL, 'type' => 'class', 'key' => UserResource::class],
+            ['panel_id' => ContextPicker::ANY_PANEL, 'type' => 'class', 'key' => Login::class],
+            ['panel_id' => ContextPicker::ANY_PANEL, 'type' => 'class', 'key' => null],
+        ]))
+        ->assertDontSee(finCodexContextsWarningTail('key_panel_warning'));
+});
+
+it('warns when a url pattern sits under a panel the row did not choose', function (): void {
+    $user = finCodexContextsUser();
+    $this->usesPanel('admin', $user);
+
+    // The same silent miss the key check catches, in the one place the editor
+    // still takes free text.
+    $component = Livewire::test(CreateArticle::class)
+        ->fillForm(finCodexContextsState([
+            ['panel_id' => 'admin', 'type' => 'url', 'url' => '/portal/things/*'],
+        ]))
+        ->assertSee(finCodexContextsWarning('url_panel_warning', 'portal'));
+
+    $item = array_key_first(data_get($component->instance()->data, 'contexts'));
+
+    // Without the round trip on blur the warning would wait for an unrelated
+    // update instead of appearing while the author is still on the row.
+    expect(finCodexContextsUrlInput($component, $item)->isLiveOnBlur())->toBeTrue();
+
+    // Naming the panel the pattern already sits under settles it, and the
+    // pattern itself is never taken away or announced.
+    $component
+        ->set("data.contexts.{$item}.panel_id", 'portal')
+        ->assertSet("data.contexts.{$item}.url", '/portal/things/*')
+        ->assertDontSee(finCodexContextsWarningTail('url_panel_warning'))
+        ->assertNotNotified();
+});
+
+it('leaves a url pattern alone when it matches, spans every panel or belongs to none', function (): void {
+    $user = finCodexContextsUser();
+    $this->usesPanel('admin', $user);
+
+    // In order: the row's own panel, a leading wildcard segment that matches
+    // no literal prefix, a path no panel claims, and Any panel, which the
+    // warning is not about at all.
+    Livewire::test(CreateArticle::class)
+        ->fillForm(finCodexContextsState([
+            ['panel_id' => 'admin', 'type' => 'url', 'url' => '/admin/users/*'],
+            ['panel_id' => 'admin', 'type' => 'url', 'url' => '/*/things'],
+            ['panel_id' => 'admin', 'type' => 'url', 'url' => '/somewhere-else'],
+            ['panel_id' => ContextPicker::ANY_PANEL, 'type' => 'url', 'url' => '/portal/things/*'],
+            ['panel_id' => 'admin', 'type' => 'url', 'url' => null],
+        ]))
+        ->assertDontSee(finCodexContextsWarningTail('url_panel_warning'));
 });

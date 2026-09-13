@@ -1,7 +1,7 @@
 ---
 title: Hilfeabdeckung
 excerpt: Welche Bildschirme einen Hilfeartikel haben, welche nicht, und wie Sie eine Lücke schließen.
-order: 3
+order: 4
 visibility: authenticated
 contexts:
   - class:FinityLabs\FinCodex\Pages\HelpCoverage

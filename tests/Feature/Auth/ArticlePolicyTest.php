@@ -62,6 +62,18 @@ it('allows every ability for an authenticated user', function (string $ability, 
     'convert' => ['convert', true],
 ]);
 
+/*
+ * viewAllPanels is the one ability the shipped policy refuses, so it stays out
+ * of the dataset above. Open-by-default is about keeping a fresh install
+ * usable; reading another panel's help is a decision only the host can make,
+ * per viewer, by writing the method at {policyNamespace}\ArticlePolicy.
+ */
+it('answers false to viewAllPanels for an authenticated user', function (): void {
+    $user = finCodexPolicyUser();
+
+    expect(Gate::forUser($user)->allows('viewAllPanels', Article::class))->toBeFalse();
+});
+
 it('registers the shipped policy when no panel is current', function (): void {
     expect(Filament::getCurrentPanel())->toBeNull();
 

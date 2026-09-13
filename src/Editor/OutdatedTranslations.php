@@ -98,7 +98,29 @@ final class OutdatedTranslations
     }
 
     /**
-     * Articles with no translation in $locale at all.
+     * Articles the badge calls missing in $locale: no row at all, or a row
+     * whose title or body is blank once trimmed.
+     *
+     * This is `verdicts()`'s own rule expressed in SQL, so the list's filter,
+     * the languages column and both translate actions return one set rather
+     * than three. The trim is not decoration — a whitespace-only title is
+     * blank to `blank()` and to the core's missing-translation reader, and a
+     * plain comparison against the empty string would call it written.
+     *
+     * Stated positively the subquery finds a *filled* row, which the outer
+     * "doesn't have" then inverts, so the query plan stays the single
+     * `not exists (...)` it always was.
+     *
+     * Known edge, accepted: the one-argument TRIM shared by SQLite, MySQL,
+     * MariaDB and PostgreSQL strips spaces and nothing else, while PHP also
+     * strips tabs and newlines. A row whose title or body holds only a tab or
+     * a newline is therefore blank to the badge and filled to this filter. A
+     * driver-specific predicate costs more than that shape is worth.
+     *
+     * Table names come from the models (`getTable()` reads
+     * `lin-codex.table_names.*`), never from a literal `codex_*` string;
+     * qualifying the columns also keeps the subquery unambiguous if the
+     * articles table ever gains a title of its own.
      *
      * @param  Builder<Article>  $query
      *
@@ -106,9 +128,14 @@ final class OutdatedTranslations
      */
     public function scopeMissing(Builder $query, string $locale): Builder
     {
+        $translations = (new ArticleTranslation)->getTable();
+
         return $query->whereDoesntHave(
             'translations',
-            fn (Builder $translations): Builder => $translations->where('locale', $locale),
+            fn (Builder $filled): Builder => $filled
+                ->where('locale', $locale)
+                ->whereRaw("trim({$translations}.title) <> ''")
+                ->whereRaw("trim({$translations}.body) <> ''"),
         );
     }
 

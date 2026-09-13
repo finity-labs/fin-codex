@@ -29,4 +29,6 @@ Type into the search field at the top of the drawer. Results come from every art
 
 ## The help center
 
-**Open the help center** at the bottom of the drawer opens the same articles as a full page, with the section tree beside them, for reading longer articles or sharing a link to one.
+The same articles are also there as a full page, with the section tree beside them, for reading longer ones or sharing a link to one. It opens from the user menu or from the navigation, wherever this panel keeps it, and from **Open the help center** at the bottom of the drawer.
+
+[The help center](help-center.md) has the rest.

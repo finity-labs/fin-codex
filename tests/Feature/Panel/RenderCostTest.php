@@ -1,6 +1,7 @@
 <?php
 
 use Filament\Pages\Dashboard;
+use FinityLabs\FinCodex\Scope\PanelScopeGate;
 use FinityLabs\FinCodex\Tests\Fixtures\User;
 use FinityLabs\LinCodex\Contracts\ContentSource;
 use FinityLabs\LinCodex\Enums\ContextType;
@@ -54,6 +55,29 @@ it('hydrates the knowledge base at most twice for a plain panel page', function 
     $loads = finCodexArticleLoads(fn () => $this->actingAs($user, 'web')->get('/admin')->assertOk());
 
     expect($loads)->toBeLessThanOrEqual(2);
+});
+
+/*
+ * The panel scope reads the same set the rest of the page already reads: its
+ * verdict map is built from one ContentSource::all(), memoised per panel per
+ * request, and it never queries per article. So a page whose articles belong
+ * to two panels and to neither costs what a page cost before the scope.
+ */
+it('costs no extra article load with the PanelScopeGate installed', function (): void {
+    finCodexCostArticle('admin-cost');
+    finCodexCostArticle('staff-cost', 'staff');
+
+    Article::factory()->public()->published()
+        ->withTranslation('en', ['title' => 'General', 'body' => 'About everything.'])
+        ->create(['slug' => 'general-cost']);
+
+    $user = User::create(['name' => 'Tester', 'email' => 'scope-cost@example.com']);
+
+    $loads = finCodexArticleLoads(fn () => $this->actingAs($user, 'web')->get('/admin')->assertOk());
+
+    // The hook was live for the render that was just measured.
+    expect(config('lin-codex.auth.gate'))->toBe(PanelScopeGate::class)
+        ->and($loads)->toBeLessThanOrEqual(2);
 });
 
 it('reads the inner source once per request however many surfaces ask', function (): void {

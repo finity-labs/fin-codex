@@ -18,6 +18,21 @@ function finCodexGuestLinkCount(string $html, string $panel): int
     return substr_count($html, 'data-fin-codex-guest-link="'.$panel.'"');
 }
 
+/** The opening <a ...> tag of the guest link for one panel; Filament's link component owns the attribute order. */
+function finCodexGuestLinkTag(string $html, string $panel): string
+{
+    $start = strpos($html, 'data-fin-codex-guest-link="'.$panel.'"');
+
+    if ($start === false) {
+        test()->fail("No guest link for the {$panel} panel in the page.");
+    }
+
+    $open = (int) strpos($html, '<a', $start);
+    $close = (int) strpos($html, '>', $open);
+
+    return substr($html, $open, $close - $open + 1);
+}
+
 function finCodexGuestPlugin(string $panel): FinCodexPlugin
 {
     $plugin = Filament::getPanel($panel)->getPlugin('fin-codex');
@@ -51,6 +66,23 @@ it('mounts the drawer and a help link under the form on every simple-layout auth
     'staff login' => ['/staff/login', 'staff', 'staff'],
     'staff register' => ['/staff/register', 'staff', 'staff'],
     'staff password reset request' => ['/staff/password-reset/request', 'staff', 'staff'],
+]);
+
+/*
+ * PLACE-03 on the guest link. The anchor used to resolve the core's public
+ * help-center route by name, which stops existing once the published prefix
+ * is null, and the Help Center page now sits behind the panel login, so a
+ * guest has nowhere to be sent. The href round-trips to the page the guest is
+ * already on; the drawer opens from the Alpine click handler.
+ */
+it('gives the guest link an inert same-page href instead of the core route', function (string $path, string $panel): void {
+    $html = $this->get($path)->assertOk()->getContent();
+
+    expect(finCodexGuestLinkTag($html, $panel))->toContain('href="http://localhost'.$path.'?codex"');
+})->with([
+    'admin login' => ['/admin/login', 'admin'],
+    'staff login' => ['/staff/login', 'staff'],
+    'admin register' => ['/admin/register', 'admin'],
 ]);
 
 it('mounts the drawer and the link on the signed password-reset page', function (): void {

@@ -1,10 +1,12 @@
 <?php
 
+use Filament\Auth\Pages\Login;
 use Filament\Pages\Dashboard;
 use FinityLabs\FinCodex\Livewire\HelpDrawer;
 use FinityLabs\FinCodex\Tests\Fixtures\User;
 use FinityLabs\LinCodex\Enums\ContextType;
 use FinityLabs\LinCodex\Models\Article;
+use Illuminate\Support\Facades\Gate;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 
@@ -17,7 +19,7 @@ use Livewire\Livewire;
  * behaviour itself is lin-codex's to prove.
  */
 
-function finCodexSchemaDrawer(): Testable
+function finCodexSchemaDrawer(string $pageClass = Dashboard::class): Testable
 {
     Article::factory()->public()->published()
         ->withTranslation('en', ['title' => 'Users guide', 'excerpt' => 'All about users.', 'body' => "## Adding\n\nText about **users**.\n\n## Removing\n\nMore.\n\n## Renaming\n\nAnd more."])
@@ -29,7 +31,7 @@ function finCodexSchemaDrawer(): Testable
 
     test()->usesPanel('admin', User::create(['name' => 'Tester', 'email' => 'drawer@example.com']));
 
-    return Livewire::test(HelpDrawer::class, ['pageClass' => Dashboard::class, 'panelId' => 'admin', 'guard' => 'web']);
+    return Livewire::test(HelpDrawer::class, ['pageClass' => $pageClass, 'panelId' => 'admin', 'guard' => 'web']);
 }
 
 it('lists the page\'s articles as Filament link actions with their excerpts, under a search field and tabs', function (): void {
@@ -92,4 +94,56 @@ it('returns to the page tab and the article when the tab strip says so', functio
     expect($drawer->get('view'))->toBe('article')
         ->and($drawer->get('tab'))->toBe('page')
         ->and($drawer->html())->toContain('codex-article__body');
+});
+
+/*
+ * PLACE-02 and PLACE-03 in the footer. "Open help center" is offered only
+ * where the viewer can actually walk through the door: it goes to the panel's
+ * own Help Center page, it is withheld on a simple-layout page because that
+ * page is a guest page and the Help Center now sits behind the panel login,
+ * and it is withheld from a viewer the page's own gate refuses. The whole
+ * Actions group goes, not just the Action, so no empty wrapper is left; the
+ * shortcut hint stays, which is the shape the core's own drawer view has.
+ *
+ * The page class comes from the locked memo the core captures at mount, not
+ * from the current route: a Livewire update request has no page, and a footer
+ * that read the route would flip its own visibility between the first render
+ * and the next update.
+ */
+it('points the footer link at the panel\'s own Help Center page', function (): void {
+    $html = finCodexSchemaDrawer()->html();
+
+    expect($html)->toContain('data-fin-codex-drawer-help-center')
+        ->toContain('href="http://localhost/admin/help"');
+});
+
+it('withholds the footer link on a simple-layout page and keeps the shortcut hint', function (): void {
+    $html = finCodexSchemaDrawer(Login::class)->html();
+
+    expect($html)->not->toContain('data-fin-codex-drawer-help-center')
+        ->not->toContain(__('lin-codex::lin-codex.ui.open_help_center'))
+        ->toContain(__('lin-codex::lin-codex.ui.shortcut_hint', ['shortcut' => 'ctrl+/']));
+});
+
+it('withholds the footer link from a viewer the page gate refuses', function (): void {
+    Gate::define('page_HelpCenter', fn (): bool => false);
+
+    $html = finCodexSchemaDrawer()->html();
+
+    expect($html)->not->toContain('data-fin-codex-drawer-help-center')
+        ->not->toContain(__('lin-codex::lin-codex.ui.open_help_center'))
+        ->toContain(__('lin-codex::lin-codex.ui.shortcut_hint', ['shortcut' => 'ctrl+/']));
+});
+
+it('never renders the footer link with an empty href', function (): void {
+    test()->usesPanel('admin', User::create(['name' => 'Tester', 'email' => 'no-prefix@example.com']));
+
+    // The state a tenanted panel is in before its tenant is known: the boot
+    // write could compute no prefix, so the core's link builder answers null.
+    config()->set('lin-codex.routes.help_center', null);
+
+    $html = Livewire::test(HelpDrawer::class, ['pageClass' => Dashboard::class, 'panelId' => 'admin', 'guard' => 'web'])->html();
+
+    expect($html)->not->toContain('data-fin-codex-drawer-help-center')
+        ->not->toContain('href=""');
 });

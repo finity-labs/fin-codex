@@ -37,22 +37,26 @@ function finCodexReadUser(string $email = 'reader@example.com'): User
 }
 
 /**
- * Three public articles on the admin dashboard, plus one members-only article
- * on the same screen. Seeded before the first request, so no memo needs
- * dropping for the first read.
+ * Three public articles on one panel's dashboard, plus one members-only
+ * article on the same screen. Seeded before the first request, so no memo
+ * needs dropping for the first read.
+ *
+ * The panel is a parameter because the articles are panel-scoped contexts and
+ * Phase 14 hides another panel's articles: a row that reads them has to seed
+ * them on the panel it makes current.
  */
-function finCodexReadSeed(): void
+function finCodexReadSeed(string $panelId = 'admin'): void
 {
     foreach (['getting-started' => 'Getting started', 'shortcuts' => 'Shortcuts', 'widgets' => 'Widgets'] as $slug => $title) {
         Article::factory()->public()->published()
             ->withTranslation('en', ['title' => $title, 'body' => 'About '.$slug.'.'])
-            ->withContext(ContextType::PageClass, Dashboard::class, 'admin')
+            ->withContext(ContextType::PageClass, Dashboard::class, $panelId)
             ->create(['slug' => $slug]);
     }
 
     Article::factory()->authenticated()->published()
         ->withTranslation('en', ['title' => 'Internal notes', 'body' => 'The internal body.'])
-        ->withContext(ContextType::PageClass, Dashboard::class, 'admin')
+        ->withContext(ContextType::PageClass, Dashboard::class, $panelId)
         ->create(['slug' => 'internal-notes']);
 }
 
@@ -182,10 +186,11 @@ it('keeps ArticleGate in charge of a members-only article under the deny-everyth
 });
 
 it('returns the same global-search help hits with a deny-everything policy as with none at all', function (): void {
-    finCodexReadSeed();
+    // The staff panel is the one whose plugin has globalSearch() on, so this
+    // row's articles belong to staff; admin's would be out of scope there.
+    finCodexReadSeed('staff');
     $user = finCodexReadUser();
 
-    // The staff panel is the one whose plugin has globalSearch() on.
     $this->usesPanel('staff', $user);
 
     $category = (string) __('fin-codex::fin-codex.search.category');

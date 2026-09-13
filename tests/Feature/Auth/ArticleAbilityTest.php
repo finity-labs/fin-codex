@@ -2,6 +2,7 @@
 
 use FinityLabs\FinCodex\Auth\ArticleAbility;
 use FinityLabs\FinCodex\Tests\Fixtures\Policies\DenyAllArticlePolicy;
+use FinityLabs\FinCodex\Tests\Fixtures\Policies\ViewAllPanelsArticlePolicy;
 use FinityLabs\FinCodex\Tests\Fixtures\User;
 use FinityLabs\LinCodex\Models\Article;
 use Illuminate\Contracts\Auth\Authenticatable;
@@ -121,14 +122,47 @@ class FinCodexStandardDenyPolicy extends FinCodexStandardArticlePolicy
     }
 }
 
-/** Sign a user in on the default guard, which is the admin panel's. */
-function finCodexAbilityUser(): User
+/**
+ * One person may read every panel's help, and that same person is the only one
+ * who may write an article at all: the rows that hand an explicit user in ask
+ * this policy about somebody who is not the one signed in.
+ *
+ * It stops at the five standard abilities otherwise, so import still has to
+ * find its way to create — the user parameter and the fallback have to
+ * compose.
+ */
+class FinCodexOneUserArticlePolicy extends FinCodexStandardArticlePolicy
 {
-    $user = User::create(['name' => 'Ability', 'email' => 'ability@example.com']);
+    public function create(Authenticatable $user): bool
+    {
+        return $user->email === 'all@example.com';
+    }
+
+    public function update(Authenticatable $user, Article $article): bool
+    {
+        return $user->email === 'all@example.com';
+    }
+
+    public function viewAllPanels(Authenticatable $user): bool
+    {
+        return $user->email === 'all@example.com';
+    }
+}
+
+/** Sign a user in on the default guard, which is the admin panel's. */
+function finCodexAbilityUser(string $email = 'ability@example.com'): User
+{
+    $user = User::create(['name' => 'Ability', 'email' => $email]);
 
     test()->actingAs($user);
 
     return $user;
+}
+
+/** A user nobody signs in; the explicit-user rows ask the Gate about this one. */
+function finCodexLiftedUser(): User
+{
+    return User::create(['name' => 'All panels', 'email' => 'all@example.com']);
 }
 
 /**
@@ -198,6 +232,57 @@ it('passes a standard ability straight through', function (): void {
 
     Gate::policy(Article::class, FinCodexStandardDenyPolicy::class);
     expect(ArticleAbility::allows('update', $article))->toBe(Gate::allows('update', $article));
+});
+
+/*
+ * viewAllPanels is the exception to the paragraph above: it has no standard
+ * ability behind it. A policy that never heard of it answers no, however
+ * generous it is about everything else, because lifting the panel scope is a
+ * decision the host has to write down rather than inherit.
+ */
+it('never falls back to a standard ability for viewAllPanels', function (string $policy, bool $expected): void {
+    finCodexAbilityUser();
+
+    Gate::policy(Article::class, $policy);
+
+    expect(ArticleAbility::allows('viewAllPanels'))->toBe($expected);
+})->with([
+    'the five standard abilities, granted' => [FinCodexStandardArticlePolicy::class, false],
+    'every ability we ship, granted' => [FinCodexFullArticlePolicy::class, false],
+    'deny-all' => [DenyAllArticlePolicy::class, false],
+    'a host that wrote the method' => [ViewAllPanelsArticlePolicy::class, true],
+]);
+
+it('asks the Gate about the user it is given, not the one signed in', function (): void {
+    $lifted = finCodexLiftedUser();
+    finCodexAbilityUser();
+
+    Gate::policy(Article::class, FinCodexOneUserArticlePolicy::class);
+
+    expect(ArticleAbility::allows('viewAllPanels', Article::class, $lifted))->toBeTrue()
+        ->and(ArticleAbility::allows('viewAllPanels'))->toBeFalse();
+});
+
+it('resolves a standard ability for the user it is given', function (): void {
+    $lifted = finCodexLiftedUser();
+    $signedIn = finCodexAbilityUser();
+    $article = Article::factory()->create();
+
+    Gate::policy(Article::class, FinCodexOneUserArticlePolicy::class);
+
+    expect(ArticleAbility::allows('update', $article, $lifted))->toBeTrue()
+        ->and(ArticleAbility::allows('update', $article, $signedIn))->toBeFalse()
+        ->and(ArticleAbility::allows('update', $article))->toBeFalse();
+});
+
+it('falls back for the user it is given', function (): void {
+    $lifted = finCodexLiftedUser();
+    finCodexAbilityUser();
+
+    Gate::policy(Article::class, FinCodexOneUserArticlePolicy::class);
+
+    expect(ArticleAbility::allows('import', Article::class, $lifted))->toBeTrue()
+        ->and(ArticleAbility::allows('import'))->toBeFalse();
 });
 
 it('answers a bool with no policy registered at all', function (): void {

@@ -1,4 +1,4 @@
-{{-- Rendered at HEAD_END by HelpMount::head(). The core stylesheet comes first so the rules below, at the same specificity, win the cascade. The core's tokens are remapped onto the panel's own variables — Filament's grey scale, primary scale, radii and font — for light and dark, so article content rendered by the core partials follows the panel theme; the shell rules space the Filament components the drawer view uses; the guest link gets its spacing under the auth forms. --}}
+{{-- Rendered at HEAD_END by HelpMount::head(). The core stylesheet comes first so the rules below, at the same specificity, win the cascade. The core's tokens are remapped onto the panel's own variables — Filament's grey scale, primary scale, radii and font — for light and dark, so article content rendered by the core partials follows the panel theme; the shell rules space the Filament components the drawer view uses; the Help Center rules stick its two rails, indent its nested tree and stop its article column widening the grid, dropping to one sticky-free column below Filament's lg breakpoint; the guest link gets its spacing under the auth forms. The core stylesheet stays the only thing styling the rendered article body. --}}
 <x-lin-codex::styles />
 <style data-fin-codex-theme>
     .codex-root, .codex-help-button {
@@ -44,6 +44,32 @@
         flex: none;
         padding: 0.75rem 1rem;
         border-top: 1px solid var(--codex-border);
+    }
+    .fin-codex-help__rail,
+    .fin-codex-help__toc {
+        position: sticky;
+        top: 1rem;
+        align-self: start;
+        max-height: calc(100vh - 9rem);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+    }
+    .fin-codex-help__children {
+        padding-inline-start: 1rem;
+        border-inline-start: 1px solid var(--codex-border);
+    }
+    .fin-codex-help__article {
+        min-width: 0;
+    }
+    @media (max-width: 1023px) {
+        .fin-codex-help__toc {
+            display: none;
+        }
+        .fin-codex-help__rail {
+            position: static;
+            max-height: none;
+            overflow: visible;
+        }
     }
     .fin-codex-guest-link {
         display: flex;

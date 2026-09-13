@@ -4,6 +4,7 @@ use Filament\Facades\Filament;
 use Filament\Livewire\Topbar;
 use Filament\Pages\Dashboard;
 use FinityLabs\FinCodex\FinCodexPlugin;
+use FinityLabs\FinCodex\Panel\HelpMount;
 use FinityLabs\FinCodex\Tests\Fixtures\User;
 use FinityLabs\LinCodex\Enums\ContextType;
 use FinityLabs\LinCodex\Models\Article;
@@ -178,6 +179,46 @@ it('is Filament\'s own icon button in the primary colour, labelled for assistive
         // The bell's sizing: a lg icon in a default-size button.
         ->and($html)->toMatch('/data-fin-codex-help-button="admin"[\s\S]*?<svg class="fi-icon fi-size-lg"/')
         ->not->toContain('codex-help-button--labelled');
+});
+
+/*
+ * PLACE-02 on the button. The anchor used to resolve the core's public
+ * help-center route by name, which stops existing the moment the published
+ * prefix is null — the state fin-codex:install now leaves behind. It takes
+ * the panel's own Help Center URL as a prop instead, and the destination is
+ * the panel the button is rendered on, not a single application-wide page.
+ */
+it('points the button at the panel\'s own Help Center page', function (string $guard, string $path, string $panel, string $href): void {
+    $user = User::create(['name' => 'Tester', 'email' => $guard.'@example.com']);
+
+    $html = $this->actingAs($user, $guard)->get($path)->assertOk()->getContent();
+
+    expect(finCodexButtonTag($html, $panel))->toContain('href="'.$href.'"');
+})->with([
+    'admin' => ['web', '/admin', 'admin', 'http://localhost/admin/help'],
+    'staff' => ['staff', '/staff', 'staff', 'http://localhost/staff/help'],
+]);
+
+/*
+ * A render hook that throws takes the whole page down, so the button has to
+ * survive a panel whose Help Center URL cannot be built — a tenanted panel
+ * before its tenant is known is the live case. helpCenterUrl() answers null
+ * there and '#' is the honest degradation.
+ */
+it('degrades the button href to # when no help-center URL can be built', function (): void {
+    $panel = $this->usesPanel('admin', finCodexWebUser());
+
+    $plugin = new class extends FinCodexPlugin
+    {
+        public function helpCenterUrl(?string $panelId = null): ?string
+        {
+            return null;
+        }
+    };
+
+    $html = (string) app(HelpMount::class)->button($plugin, $panel);
+
+    expect(finCodexButtonTag($html, 'admin'))->toContain('href="#"');
 });
 
 it('renders the default hook inside the topbar end group, after the user menu', function (): void {

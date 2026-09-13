@@ -479,7 +479,7 @@ it('falls back to the current-or-default panel when the press recorded none', fu
         ->and(finCodexNotificationsFor($user)->last()->data['actions'][0]['url'])->toContain('/admin/');
 });
 
-it('logs the failure and lets the job finish when the notification cannot even be built', function (): void {
+it('stores the notification without its button when the article URL cannot be built', function (): void {
     $user = finCodexNotifyUser();
     $article = finCodexNotifyArticle();
 
@@ -488,9 +488,12 @@ it('logs the failure and lets the job finish when the notification cannot even b
 
     /*
      * The panel recorded carries no article resource, so the edit URL names a
-     * route it never registered and composing throws - the step that used to
-     * sit one line above the catch, where a throwable failed a job whose
-     * translations were already written.
+     * route it never registered and building it throws. Every host shape this
+     * listener cannot see arrives here the same way - a panel with tenancy
+     * whose tenant a worker cannot know, a resource override the worker cannot
+     * route, a panel changed since the press - which is why the listener's
+     * branch names no cause. Naming the class here is fine; naming it in src/
+     * would be a promise about the cause we cannot keep.
      */
     Context::add(NotificationPanel::KEY, 'plain');
 
@@ -498,14 +501,30 @@ it('logs the failure and lets the job finish when the notification cannot even b
 
     dispatch_sync(new TranslateArticle($article->id, ['de'], $user->id));
 
-    expect(ArticleTranslation::query()->where('article_id', $article->id)->where('locale', 'de')->exists())->toBeTrue()
-        ->and(finCodexNotificationsFor($user))->toHaveCount(0);
+    $stored = finCodexNotificationsFor($user);
 
-    Log::shouldHaveReceived('error')
+    expect(ArticleTranslation::query()->where('article_id', $article->id)->where('locale', 'de')->exists())->toBeTrue()
+        ->and($stored)->toHaveCount(1);
+
+    // The bell rings and the row still names the article and the language it
+    // gained; the button is the only thing lost, and it is lost the same way it
+    // is for an article that no longer exists - an empty actions array and not
+    // a word about it in the body.
+    expect($stored->first()->data['body'])->toBe(__('fin-codex::fin-codex.notification.body.translated', [
+        'title' => ArticleTitle::ofModel($article->load('translations')),
+        'languages' => finCodexNotifyName('de'),
+    ]))
+        ->and($stored->first()->data['actions'])->toBe([]);
+
+    // A notification that arrived is not an error; the error line is reserved
+    // for one that could not be stored at all.
+    Log::shouldNotHaveReceived('error');
+
+    Log::shouldHaveReceived('debug')
         ->once()
-        ->withArgs(fn (string $message, array $context): bool => $message === 'fin-codex: could not store the translation notification'
+        ->withArgs(fn (string $message, array $context): bool => $message === 'fin-codex: could not build the article URL for the translation notification'
             && $context['article_id'] === $article->id
-            && $context['user_id'] === $user->id
+            && $context['panel_id'] === 'plain'
             && $context['exception'] instanceof RouteNotFoundException);
 });
 

@@ -1,7 +1,7 @@
 ---
 title: Hilfe im Code deklarieren
 excerpt: Für Entwicklerinnen und Entwickler — Artikel ohne Editor an Ressourcen, Seiten und Felder hängen.
-order: 5
+order: 6
 visibility: authenticated
 contexts:
   - class:FinityLabs\FinCodex\Resources\ArticleResource

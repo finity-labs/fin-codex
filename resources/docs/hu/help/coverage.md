@@ -1,7 +1,7 @@
 ---
 title: Súgólefedettség
 excerpt: Mely képernyőknek van súgócikkük, melyeknek nincs, és hogyan zárható be egy hiány.
-order: 3
+order: 4
 visibility: authenticated
 contexts:
   - class:FinityLabs\FinCodex\Pages\HelpCoverage

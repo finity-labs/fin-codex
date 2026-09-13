@@ -1,7 +1,7 @@
 ---
 title: Hilfe-Einstellungen
 excerpt: Sprachen, das Leseverhalten bei fehlenden Übersetzungen und die Aufbewahrung von Revisionen.
-order: 4
+order: 5
 visibility: authenticated
 contexts:
   - class:FinityLabs\FinCodex\Pages\HelpSettings

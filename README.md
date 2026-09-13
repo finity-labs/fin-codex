@@ -12,7 +12,9 @@ In-app help for Filament panels. Codex puts a help drawer in the topbar, shows a
 ## Features
 
 - **Help drawer** on every panel page, opened from the topbar button, a keyboard shortcut, a `?codex=slug` link or a `codex:open` browser event.
+- **Help center page** at `{panel}/help` — the whole library inside the panel, with a contents tree, search and the article's own headings, placed in the user menu or the navigation.
 - **Contextual help** — the drawer opens on the articles attached to the current resource or page. Attach them from the editor, or declare them in code with `HasHelp`.
+- **Panel scoping** — each panel reads its own articles plus the ones bound to no panel, and a `viewAllPanels` grant lets staff read every panel's.
 - **Field hints** — a question-mark button next to a form field that opens the article at a specific heading.
 - **Guest support.** The login, registration and password-reset pages get their own "Need help?" link and the same drawer.
 - **Article editor** with Markdown, language tabs, image uploads, a preview, and an HTML → Markdown conversion for imported content.
@@ -23,7 +25,7 @@ In-app help for Filament panels. Codex puts a help drawer in the topbar, shows a
 - **Coverage report** listing every screen in the panel and which of them have no article yet, with row actions that write, attach or import one.
 - **Source warnings** — broken front matter, duplicate slugs and `HasHelp` declarations naming articles that do not exist, in one collapsed panel above the article list.
 - **Optional global search integration**, off by default, appending a gated Help category to the panel's own search field.
-- **Authorization** through a shipped `ArticlePolicy` you can replace, with Filament Shield support for the two pages and the resource.
+- **Authorization** through a shipped `ArticlePolicy` you can replace, with Filament Shield support for the three pages and the resource.
 - **English, German and Hungarian** out of the box.
 
 ## Requirements
@@ -36,7 +38,7 @@ In-app help for Filament panels. Codex puts a help drawer in the topbar, shows a
 
 Codex is split across two packages, and it matters for where you configure things. **lin-codex** owns the content: the `codex_*` tables, the Markdown renderer, the filesystem source, visibility rules, search, translations and the JSON API. It ships its own config file, its own install command and its own Blade drawer, and it works in any Laravel app with no Filament at all.
 
-**fin-codex** — this package — is the panel layer on top: the drawer mount, the help button, the editor, the settings and coverage pages, and the authorization. It has no config file of its own. Anything about *content* (the media disk, search tuning, the help-center route, the article gate) is configured in `config/lin-codex.php`; anything that can differ between two panels is a fluent option on the plugin.
+**fin-codex** — this package — is the panel layer on top: the drawer mount, the help button, the help center, the editor, the settings and coverage pages, and the authorization. It has no config file of its own. Anything about *content* (the media disk, search tuning, the help-center route, the article gate) is configured in `config/lin-codex.php`; anything that can differ between two panels is a fluent option on the plugin.
 
 ## Installation
 
@@ -61,7 +63,7 @@ The install command:
 - Checks that lin-codex's articles table exists, and offers to run `codex:install` if it doesn't.
 - Registers `FinCodexPlugin::make()` in one of your panel providers (it lists the panels it found; pass `--panel=admin` to skip the prompt).
 - Asks which languages the help articles are written in, with the locales your application already translates pre-selected, and writes them to the Codex settings. Pass `--locales=en,de` to answer without the prompt. The application locale stays the default language when it is among them.
-- Offers to import eleven starter articles in the configured languages (they exist in en, de and hu): an authenticated **Help** section about the help system itself — getting help, writing articles, coverage, settings, and declaring help in code — and a public **Your account** section for Filament's own screens — signing in, creating an account, a forgotten password, email verification and the profile page (the profile article is authenticated). The account section is public on purpose: lin-codex hides an article whose ancestor the reader may not open, so a visitor on the sign-in page only sees articles whose whole path is public. They land as ordinary database articles, attached to the pages they describe and to the panel the plugin was installed on, and are yours to edit or delete. `--skip-starter-articles` leaves them out; a slug that already exists is left alone.
+- Offers to import twelve starter articles in the configured languages (they exist in en, de and hu): an authenticated **Help** section about the help system itself — getting help, the help center, writing articles, coverage, settings, and declaring help in code — and a public **Your account** section for Filament's own screens — signing in, creating an account, a forgotten password, email verification and the profile page (the profile article is authenticated). The account section is public on purpose: lin-codex hides an article whose ancestor the reader may not open, so a visitor on the sign-in page only sees articles whose whole path is public. They land as ordinary database articles, attached to the pages they describe and to the panel the plugin was installed on, and are yours to edit or delete. `--skip-starter-articles` leaves them out; a slug that already exists is left alone.
 - Offers to publish the translations and the views. Both default to **no** — a published copy stops receiving upstream changes.
 - Registers the article resource in `config/filament-shield.php` if [Filament Shield](#filament-shield-integration) is installed, and runs `shield:generate`.
 - Offers to set up [AI translation](#ai-translation), on PHP 8.3+ and Laravel 12+ only. If the SDK isn't there it offers to run `composer require laravel/ai:^0.11` for you and then stops, because the process that's already running can't autoload what Composer just wrote — start it again with `--ai-only`. Otherwise it asks for the provider, the model (the provider's default, cheapest and smartest models by name, or a custom id) and the API key (never for Ollama, optional when a key is already stored or `config/ai.php` carries one — leave it blank and the stored key is kept, exactly as a blank save on the settings page keeps it), tests the connection once, and saves the settings with AI switched on. A failed test saves nothing and says why.
@@ -109,14 +111,17 @@ FinCodexPlugin::make()
     ->drawerWidth(480)                         // drawer width in pixels
     ->helpButton()                             // show the topbar button (default: true)
     ->guestDrawer()                            // drawer and link on simple-layout pages (default: true)
+    ->authoring()                              // this panel manages help content (default: true)
     ->globalSearch()                           // Help category in the panel search (default: false)
     ->helpButtonRenderHook(PanelsRenderHook::USER_MENU_AFTER)
     ->navigationGroup('Help')
     ->navigationSort(90)
+    ->helpCenterPlacement(HelpCenterPlacement::Both)
     ->policyNamespace('App\\Policies')
     ->articleResource(MyArticleResource::class)
     ->settingsPage(MyHelpSettings::class)
     ->coveragePage(MyHelpCoverage::class)
+    ->helpCenterPage(MyHelpCenter::class)
 ```
 
 | Method | Default | What it does |
@@ -125,18 +130,25 @@ FinCodexPlugin::make()
 | `drawerWidth(int\|Closure)` | `480` | Drawer width in pixels. |
 | `helpButton(bool\|Closure)` | `true` | Renders the topbar help button. `false` removes the button only — the drawer, its shortcut and field hints stay. |
 | `guestDrawer(bool\|Closure)` | `true` | The "Need help?" link and the drawer on simple-layout pages: login, register, password reset, email verification and any host `SimplePage`. `false` removes all three there; signed-in pages are unaffected. |
+| `authoring(bool\|Closure)` | `true` | Whether this panel manages help content. `false` registers the article resource, Help settings and Help coverage nowhere in it — no navigation items, no routes — and leaves the reading half untouched. See [One panel authors, the others read](#one-panel-authors-the-others-read). |
 | `globalSearch(bool\|Closure)` | `false` | Appends a Help category to the panel's global search results. See [Global search](#global-search). |
 | `helpButtonRenderHook(string\|Closure)` | `USER_MENU_AFTER` | Where the button renders. Set it explicitly and Codex honours it as given. Leave it alone and the button sits beside the user menu: in the topbar's end group next to the notification bell, or in the sidebar footer on a panel with `->topbar(false)`. A panel with `->userMenu(false)` gets it at `TOPBAR_END`, or `SIDEBAR_FOOTER` without a topbar. Under SPA mode Filament persists the topbar's end group across navigations, so the badge there keeps the count of the first page; name `TOPBAR_END` if you want it live. |
 | `navigationGroup(string\|UnitEnum\|Closure\|null)` | `NavigationGroup::Help` | The navigation group for the resource and both pages. The default enum's label follows the panel locale. |
 | `navigationSort(int\|Closure\|null)` | `null` | Sort for the article resource. Help settings files at `+1` and Help coverage at `+2`, so `->navigationSort(90)` gives 90, 91 and 92. Leave it null and Filament sorts the group by label. |
+| `helpCenterPlacement(HelpCenterPlacement\|Closure)` | `HelpCenterPlacement::UserMenu` | Where the help center is advertised: the user menu, the navigation, both or neither. The page stays reachable under all four. See [Placement](#placement). |
+| `helpCenterNavigationGroup(string\|UnitEnum\|Closure\|null)` | `null` | The group the help center's navigation item is filed under. Null leaves it at the top level, outside the Help group the authoring screens use. See [Placement](#placement). |
+| `helpCenterNavigationSort(int\|Closure\|null)` | `1000` | Where that item sorts. The default puts it below a panel's own arrangement; `null` means no sort at all. |
+| `helpCenterNavigationLabel(string\|Closure\|null)` | the translated `'Help center'` | That item's label. The user-menu entry's wording is fixed and does not read this. |
+| `helpCenterNavigationIcon(string\|BackedEnum\|Htmlable\|Closure\|null)` | an outlined book | That item's icon. A book, not the question mark the topbar button carries. |
 | `policyNamespace(string)` | `'App\Policies'` | Where Codex looks for your own `ArticlePolicy`. See [Authorization](#authorization). |
 | `articleResource(class-string)` | built-in | Swap in a subclass of `FinityLabs\FinCodex\Resources\ArticleResource`. |
 | `settingsPage(class-string)` | built-in | Swap in a subclass of `FinityLabs\FinCodex\Pages\HelpSettings`. |
 | `coveragePage(class-string)` | built-in | Swap in a subclass of `FinityLabs\FinCodex\Pages\HelpCoverage`. |
+| `helpCenterPage(class-string)` | built-in | Swap in a subclass of `FinityLabs\FinCodex\Pages\HelpCenter`. Registered on every panel, `->authoring(false)` included. |
 
-> **The three class overrides must name a real subclass of ours.** Filament calls `registerRoutes()` and `registerNavigationItems()` statically on whatever string you pass at panel registration time, so a typo or a class that doesn't extend the built-in one is a fatal error on the next request, not a quietly ignored option. Keep the built-in slug (or override `getPages()` too) so the internal links keep resolving.
+> **The four class overrides must name a real subclass of ours.** Filament calls `registerRoutes()` and `registerNavigationItems()` statically on whatever string you pass at panel registration time, so a typo or a class that doesn't extend the built-in one is a fatal error on the next request, not a quietly ignored option. Keep the built-in slug (or override `getPages()` too) so the internal links keep resolving.
 
-Extending is the intended way to adjust things. All three built-ins are non-final, and a subclass inherits the list, the filters, the "From files" tab, the form, the relation managers and every header action for free. The built-in pages resolve their resource through the plugin of the panel serving the request, so whatever you override on the subclass — the form, the table, `getEloquentQuery()`, the relation managers, the navigation statics — takes effect on those pages, and two panels can name two different subclasses:
+Extending is the intended way to adjust things. All four built-ins are non-final, and a subclass inherits the list, the filters, the "From files" tab, the form, the relation managers and every header action for free. The built-in pages resolve their resource through the plugin of the panel serving the request, so whatever you override on the subclass — the form, the table, `getEloquentQuery()`, the relation managers, the navigation statics — takes effect on those pages, and two panels can name two different subclasses:
 
 ```php
 use FinityLabs\FinCodex\Resources\ArticleResource;
@@ -149,6 +161,26 @@ class MyArticleResource extends ArticleResource
     }
 }
 ```
+
+### One panel authors, the others read
+
+Register the plugin in a second panel and that panel gets everything: the button, the drawer, field hints — and a Help menu with the editor, Help settings and Help coverage in it. Useful on a staff panel whose editors write articles; noise on a panel that should only read them.
+
+`->authoring(false)` splits the two halves:
+
+```php
+// app/Providers/Filament/AdminPanelProvider.php — writes help
+->plugin(FinCodexPlugin::make())
+
+// app/Providers/Filament/ManagementPanelProvider.php — reads it
+->plugin(FinCodexPlugin::make()->authoring(false))
+```
+
+The management panel keeps the button, the drawer, its shortcut, field hints, global search if it asked for it, the panel scope and its own help center. What it no longer has is the three admin screens: `/management/help-articles` is not a route there, and nothing files under a Help group in its navigation. Articles, media, revisions and Shield abilities are untouched — one knowledge base, edited from one place.
+
+Two things stay true with authoring off. Articles still scope per panel, so an article written for `management` shows up in that panel's drawer even though the editor lives in `admin` (see [Contexts](#contexts)). And Help coverage still scans every panel, so a management screen without an article is still a gap on the report — a cleaner one, since the panel's own Help screens no longer count themselves.
+
+The option is read once, when the panel registers the plugin, so a closure may read config but not panel state or the signed-in user. Who may edit is a separate question with a separate answer: see [Authorization](#authorization).
 
 ## Contextual help
 
@@ -237,7 +269,69 @@ The hint is invisible when there is nothing to open. If the slug doesn't exist, 
 
 The button is a real link. Its `href` is the help-center URL for the article, and the Alpine handler only cancels the navigation when a drawer is present on the page. On a page without one — or with JavaScript off — the click goes to the help center in the same tab.
 
-**On an SPA panel**, Codex appends the help-center route pattern to Filament's SPA exceptions when the plugin boots. Without that, Livewire's navigate listener starts on `mousedown` and wins the race against the Alpine intercept, so the click would leave the panel even with a drawer open. A custom `lin-codex.routes.help_center` prefix is honoured, and chaining `->spaUrlExceptions([...])` after `->plugin()` keeps working — the plugin appends rather than replaces.
+**On an SPA panel**, Codex appends the help-center route pattern to Filament's SPA exceptions when the plugin boots. Without that, Livewire's navigate listener starts on `mousedown` and wins the race against the Alpine intercept, so the click would leave the panel even with a drawer open. The pattern follows the panel's own help-center path, so a second panel excepts its own, and chaining `->spaUrlExceptions([...])` after `->plugin()` keeps working — the plugin appends rather than replaces.
+
+## The help center
+
+The help center is the whole library as a page of its own, at `{panel}/help` and `{panel}/help/{slug}` — inside the panel, behind its auth and its guard. It is built out of Filament's own components and follows the panel's colours and its light and dark mode, so there is nothing to publish and nothing to theme. Every panel carrying the plugin has one, `->authoring(false)` included: this is the surface that reads help, not a fourth screen that writes it.
+
+Three columns. On the left, **Browse help**: a search field above a **Contents** / **Search** tab strip. Contents is the tree of everything this reader may open, grouped by section, and it remembers which sections you left folded. Typing moves you to Search, and the hits stay in that column, so the article you were reading is still beside them and a wrong guess costs nothing. The middle column holds the article, with breadcrumbs above the title that open each section it sits in. On the right, **On this page** lists the article's own headings and jumps to them — an article without headings has no such column and the text takes the room instead. On a narrow screen the left rail folds away, also remembered, and the article comes first.
+
+Every help link Codex renders inside a panel arrives here: the drawer's footer, the field hints' `href`, the global-search results. Each points at its own panel's copy.
+
+Who may open it is the page's own question, answered the way the other two pages answer it — Shield's permission where Shield is installed, a `page_HelpCenter` Gate ability where it is not, any panel user otherwise. See [Gating the pages](#gating-the-pages). What a reader then finds inside is decided by lin-codex's visibility rules and by [Panel scoping](#panel-scoping), exactly as in the drawer.
+
+The core's public `/help` is switched off on a fin-codex install, so this is where help lives now. If you are upgrading, read [The public help center is off](#the-public-help-center-is-off).
+
+`->helpCenterPage(MyHelpCenter::class)` swaps in your own subclass of `FinityLabs\FinCodex\Pages\HelpCenter`, the way the editor and the two admin pages are swapped. Every link above resolves through the class the panel actually registered, so a subclass is what gets linked to.
+
+### Placement
+
+Where a panel advertises the page is a per-panel choice:
+
+```php
+use FinityLabs\FinCodex\Enums\HelpCenterPlacement;
+
+FinCodexPlugin::make()
+    ->helpCenterPlacement(HelpCenterPlacement::Both)
+    ->helpCenterNavigationGroup('Support')
+    ->helpCenterNavigationSort(20)
+    ->helpCenterNavigationLabel('Manual')
+    ->helpCenterNavigationIcon('heroicon-o-academic-cap')
+```
+
+`UserMenu`, the default, puts a **Help center** entry at the top of the user menu. `Navigation` files an item in the panel's navigation instead, `Both` does both, and `None` neither. The page is registered and reachable under all four: `{panel}/help` answers, and the drawer's footer link, the field hints, the global-search rows and a bookmark all still open it.
+
+Three things follow from that:
+
+- **`None` withholds the two menu entries and nothing else.** It is how you say "reachable, but not advertised" — a panel whose readers arrive from the drawer and the hints — not how you switch the page off. Nothing switches it off.
+- **A panel with `->userMenu(false)` renders no user-menu entry whatever the placement says**, because there is no menu to render it in. Name `Navigation` or `Both` on such a panel.
+- **The user-menu entry's wording and icon are fixed.** The four `helpCenterNavigation*()` options name the navigation item only. To word the menu differently, register an entry of your own there and set the placement to `Navigation` or `None`.
+
+Both entries are hidden from a viewer who may not open the page.
+
+Those four options are the help center's alone. `navigationGroup()` and `navigationSort()` keep meaning what they always meant — the article resource, Help settings and Help coverage — and the help center stays out of that arithmetic on purpose: no group and sort `1000` by default, so it sits at the foot of the navigation rather than inside the Help group, which holds the screens that write help.
+
+## Panel scoping
+
+Since 0.5.0 a reader inside a panel sees the general articles plus that panel's own, and nothing else. An article belonging only to some other panel is hidden everywhere the core reads: the help center, the drawer's Contents tab and its search, the field hints and global search. A section left holding nothing goes with them.
+
+This is the change most likely to surprise you on an upgrade. An article written for `admin` and read from `staff` used to be there and is not any more.
+
+What puts an article in a panel is its contexts, and there are four cases:
+
+- **No contexts at all is general.** The article is read in every panel.
+- **A context that names a panel binds the article to it**, and an article with contexts in two panels is read in both. The editor's panel select writes that name, a `HasHelp` declaration writes it for the panel it declares in, and in front matter it is the prefix: `admin:class:App\Filament\Resources\UserResource`.
+- **A context that names no panel restricts nobody.** `*` in the editor's select, no prefix in front matter — one of those is enough for the article to be read from every panel, whatever its key points at. An article whose only context is a plain Laravel route is therefore read in every panel rather than in none.
+- **An article is hidden only when every one of its contexts names a different explicit panel.**
+
+A section with no body of its own follows its children: it is shown while one descendant survives the scoping and disappears when none does. A section that carries a body is scoped like any other article, and the core's ancestor rule then takes the whole subtree with it — so keep an article that should be read everywhere out of a panel-bound section.
+
+Published state and visibility are settled before any of this and stay lin-codex's. Panel scoping can only hide.
+
+**Outside a panel nothing is scoped.** The JSON API, a queued render and your own routes are not panel requests, so they answer as they always did, under the core's visibility rules and nothing more.
+
+**`viewAllPanels` lifts the rule for one reader.** With it they read every panel's help from wherever they are standing, and the help center grows a **Panel** select at the top of its left rail that answers "what would a reader in the staff panel see" — the one control most readers never meet. It is off by default, and it is the ninth row in [the abilities table](#the-abilities): it has no fallback, so a policy that does not define it says no. The shipped policy answers it from the permission Filament Shield generated for the ability — `fin-codex:install` writes it into the Shield config with the other eight, and an admin ticks it on a role. Without Shield, define `viewAllPanels()` on your own policy. A `Gate::before` callback, Shield's super admin among them, still runs before either.
 
 ## Locale and theme
 
@@ -279,7 +373,7 @@ One tab per language from the [settings](#settings). Each tab holds the title, e
 
 The call runs inside the request and waits for up to the timeout in the settings — 120 seconds by default — so your web server's own read timeout has to sit above it, or the translation dies before the model answers. nginx's `fastcgi_read_timeout` is 60 seconds out of the box; `Timeout` is Apache's and `request_terminate_timeout` php-fpm's. Raise those or lower the setting. For a provider slow enough to make that awkward, queue the work from the list instead: [Translate missing](#translating-from-the-list) runs the same translation in the background.
 
-A language is either translated or **Missing**, in the tabs and in the list's languages column, with a *Missing language* filter. There is no "outdated" marking: the editor cannot tell a corrected typo in the default text from a rewrite, and a badge that fires on both is soon ignored. `Editor\OutdatedTranslations` still computes which translations were saved before the default language, and the scope behind it, for a host that wants to surface that itself.
+A language is either translated or **Missing**, in the tabs and in the list's languages column, with a *Missing language* filter. Missing means no translation for that language, or one whose title or body is empty — the same rule everywhere it is asked, so the filter, the column and both translate actions name the same articles. There is no "outdated" marking: the editor cannot tell a corrected typo in the default text from a rewrite, and a badge that fires on both is soon ignored. `Editor\OutdatedTranslations` still computes which translations were saved before the default language, and the scope behind it, for a host that wants to surface that itself.
 
 ### Translating from the list
 
@@ -490,8 +584,11 @@ The namespace is a per-panel option and is registered when that panel boots for 
 | `restore` | Restoring a **revision** — `Article` has no soft deletes |
 | `import` | Adopting a file article into the database |
 | `convert` | Rewriting an HTML article's body as Markdown |
+| `viewAllPanels` | Reading every panel's articles from inside one panel |
 
-The first five are Filament's. The last three are ours, and **a policy that only defines the first five keeps working**: `restore` and `convert` fall through to the article's `update`, and `import` falls through to `create`. You should not have to learn our vocabulary to keep the editor running.
+The first five are Filament's. The next three are ours, and **a policy that only defines the first five keeps working**: `restore` and `convert` fall through to the article's `update`, and `import` falls through to `create`. You should not have to learn our vocabulary to keep the editor running.
+
+`viewAllPanels` is the ninth and the odd one out: it guards no screen, it widens what a viewer may *read* across panels (see [Panel scoping](#panel-scoping)), and it has no fallback — a policy that does not define it answers no, where the three above it fall through. The shipped policy answers it from the permission Filament Shield generated for the ability, and a host `Gate::before` callback still runs before any of that.
 
 The fallback fills a missing method; it never overturns a no. Define `restore()` and return `false` and the restore button stays gone.
 
@@ -503,34 +600,37 @@ There is **no `MediaPolicy` and no revision policy**, by design. Revisions, tran
 
 The drawer, the help button, the field hints and the global-search Help category go through lin-codex's `ArticleGate` and never touch `ArticlePolicy`. A user with a deny-everything article policy still reads exactly the help the core's visibility rules allow. Editor permissions have nothing to do with reading help, and there is a test in the suite that keeps it that way.
 
-### Gating the settings and coverage pages
+### Gating the pages
 
-Without Shield, both pages are open to any authenticated panel user until you define an ability named after the page class:
+Without Shield, all three pages are open to any authenticated panel user until you define an ability named after the page class:
 
 ```php
 use Illuminate\Support\Facades\Gate;
 
 Gate::define('page_HelpSettings', fn ($user) => $user->isAdmin());
 Gate::define('page_HelpCoverage', fn ($user) => $user->isAdmin());
+Gate::define('page_HelpCenter', fn ($user) => $user->isAdmin());
 ```
 
 Define nothing and nothing changes. The ability is named after the class **actually registered on the panel**, so if you supply your own settings page through `->settingsPage(MyHelpSettings::class)`, the ability is `page_MyHelpSettings`.
+
+`page_HelpCenter` is the one to think twice about: the other two gate editor screens, while this one gates a reading surface. Deny it and that panel's user-menu entry and navigation item go with it, and the drawer's footer link hides itself. The drawer, the button and the field hints keep working — reading help is a separate question from opening the page.
 
 ## Filament Shield integration
 
 [Filament Shield](https://github.com/bezhanSalleh/filament-shield) is optional. Install it and the pages and the resource pick up Shield permissions on their own; without it, authorization works exactly as described above.
 
-`fin-codex:install` writes the article resource into `config/filament-shield.php` with all eight abilities and runs `shield:generate`. The two pages need nothing written for them — Shield 4 discovers pages from the panel and only reads `pages.exclude` from config — so the command prints the nudge instead:
+`fin-codex:install` writes the article resource into `config/filament-shield.php` with all nine abilities and runs `shield:generate`. The pages need nothing written for them — Shield 4 discovers pages from the panel and only reads `pages.exclude` from config — so the command prints the nudge instead:
 
 ```bash
-php artisan shield:generate --page=HelpSettings,HelpCoverage
+php artisan shield:generate --page=HelpSettings,HelpCoverage,HelpCenter
 ```
 
 Because `policies.merge` is on by default, the resource's own methods are folded into Shield's list, which is how `restore`, `import` and `convert` end up on the generated policy. That policy lands at `App\Policies\ArticlePolicy` — the same place Codex already looks — so a Shield install takes over the article authorization with no extra wiring and no Shield branch in our code.
 
 **On `page_HelpSettings` and `page_HelpCoverage`:** those are **fin-codex's own** Gate hook for hosts without Shield. They are not Shield's naming. Shield 3 used `page_{Class}`, but Shield 4 renamed every permission — separator `:`, pascal case, a `view` prefix for pages — so on a Shield install the settings page's permission is `View:HelpSettings` by default, and something else entirely on a reconfigured one. Codex never builds that name: it asks Shield for it, which is why a customised `filament-shield.php` keeps working.
 
-`fin-codex:uninstall` removes the resource entry from the Shield config and deletes the permission rows for the resource and both pages, asking Shield for their names rather than rebuilding them. If Shield cannot answer, nothing is deleted and the command says so.
+`fin-codex:uninstall` removes the resource entry from the Shield config and deletes the permission rows for the resource and all three pages, asking Shield for their names rather than rebuilding them. If Shield cannot answer, nothing is deleted and the command says so.
 
 ## Translations
 
@@ -581,6 +681,18 @@ php artisan codex:uninstall
 
 ## Upgrading
 
+### The public help center is off
+
+Since 0.5.0 `fin-codex:install` sets `lin-codex.routes.help_center` to `null`, and the core registers neither public help-center route when it is. `/help` and `/help/{slug}` answer 404. Help lives at `{panel}/help` instead, inside the panel and behind its login.
+
+Installed before 0.5.0? Re-run `php artisan fin-codex:install`. Every step of that command is safe to repeat and the switch is the one that is new. If you set a prefix of your own, the command prints it and asks before overwriting it — say no and both help centers keep answering.
+
+Run `php artisan route:clear` afterwards if you cache routes.
+
+**If you published the views**, check them. Your copies of `panel/button.blade.php` and `panel/guest-link.blade.php` still resolve the core's help-center route by name, and that route is now gone, so they throw. Re-publish them with `php artisan vendor:publish --tag=fin-codex-views --force`, or port the change by hand.
+
+One thing the switch does not change: outside a panel — the JSON API, a queued render — the core still builds root-relative `/{slug}` links. That is lin-codex's documented contract, and reading those links needs the public page back on.
+
 ### UUID or ULID user models
 
 Since 0.4.1 the editor stores the panel user's key as the host model hands it over, so an app whose user model uses `HasUuids` or `HasUlids` gets the real author on an article, a revision and a media row. Until then the id was narrowed to `?int` on the way in and every one of those was recorded as nobody.
@@ -601,6 +713,8 @@ Nothing here is speculative — these are the things this release knows it doesn
 
 Also worth knowing:
 
+- **An article-to-article link inside a rendered body reloads the page on an SPA panel.** The core renderer writes those links root-relative, which is the form the help-center SPA exception matches, so on a panel that called `->spa()` the click is a full page load rather than a Livewire swap. The address bar, the back button, copy-link and open-in-new-tab all hold; it costs feel, not function.
+- **A completion notification whose Open article URL cannot be built arrives without its button.** A panel with tenancy, whose routes all sit under a tenant segment the worker cannot name, is the case that happens; a resource override the worker cannot route, or a panel changed since the press, do it too. The notification itself is not lost — it still names the article and the languages it gained — and the panel's log carries a `debug` line with the article id and the panel id.
 - **Changing a media disk's URL root after articles exist is not supported.** The in-use check that protects a media file from deletion looks for the URL the disk builds today.
 - **Media rows orphaned by an article delete are not cleaned up.** They keep their file and lose their `article_id`, and appear on no Media tab.
 - **Re-importing a file article over an existing database row** is not available; the import hands back the existing row instead.

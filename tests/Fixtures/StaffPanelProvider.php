@@ -10,7 +10,9 @@ use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Pages\Dashboard;
 use Filament\Panel;
 use Filament\PanelProvider;
+use Filament\Support\Icons\Heroicon;
 use Filament\View\PanelsRenderHook;
+use FinityLabs\FinCodex\Enums\HelpCenterPlacement;
 use FinityLabs\FinCodex\FinCodexPlugin;
 use FinityLabs\FinCodex\Tests\Fixtures\Pages\Reports;
 use FinityLabs\FinCodex\Tests\Fixtures\Pages\StaffHelpCoverage;
@@ -29,7 +31,10 @@ use Illuminate\View\Middleware\ShareErrorsFromSession;
  * A second panel on its own guard: id staff, path /staff, authGuard staff
  * (a session guard over the same users provider, declared in the TestCase),
  * FinCodexPlugin registered with closure-valued options that differ from
- * admin's on every option. Not the default panel. Carries the fixture
+ * admin's on every option. Its Help Center is placed in BOTH surfaces, so this
+ * panel carries a sidebar item and a user-menu entry, and it has no profile
+ * page — which is what makes it the panel the user-menu sort is pinned on.
+ * Not the default panel. Carries the fixture
  * resource, the Reports page and the registration and password-reset pages
  * so Phase 3 can prove page identity and the guest auth pages.
  */
@@ -66,6 +71,11 @@ final class StaffPanelProvider extends PanelProvider
                     ->globalSearch(fn (): bool => true)
                     ->navigationGroup(fn (): string => 'Support')
                     ->navigationSort(fn (): int => 5)
+                    ->helpCenterPlacement(fn (): HelpCenterPlacement => HelpCenterPlacement::Both)
+                    ->helpCenterNavigationGroup(fn (): string => 'Library')
+                    ->helpCenterNavigationSort(fn (): int => 20)
+                    ->helpCenterNavigationLabel(fn (): string => 'Handbook')
+                    ->helpCenterNavigationIcon(fn (): Heroicon => Heroicon::OutlinedBookmark)
                     ->articleResource(StaffHelpArticleResource::class)
                     ->settingsPage(StaffHelpSettings::class)
                     ->coveragePage(StaffHelpCoverage::class)

@@ -13,8 +13,11 @@ use FinityLabs\FinCodex\Help\ArticleLookup;
 use FinityLabs\FinCodex\Help\DeclaredContexts;
 use FinityLabs\FinCodex\Help\DeclaredContextsSource;
 use FinityLabs\FinCodex\Livewire\HelpDrawer;
+use FinityLabs\FinCodex\Pages\HelpCenter;
 use FinityLabs\FinCodex\Panel\CurrentPage;
 use FinityLabs\FinCodex\Policies\ArticlePolicy;
+use FinityLabs\FinCodex\Scope\ContextPanels;
+use FinityLabs\FinCodex\Scope\PanelScopeGate;
 use FinityLabs\FinSupport\Auth\PolicyRegistrar;
 use FinityLabs\LinCodex\Contracts\ContentSource;
 use FinityLabs\LinCodex\Events\ArticleTranslated;
@@ -23,6 +26,7 @@ use FinityLabs\LinCodex\Models\ArticleContext;
 use FinityLabs\LinCodex\Models\ArticleTranslation;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Route;
 use Livewire\Livewire;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
@@ -53,7 +57,10 @@ class FinCodexServiceProvider extends PackageServiceProvider
      * yields a fresh, decorated instance (extenders live outside the
      * instance map). DeclaredContexts is a singleton whose registry scan is
      * lazy: the panel providers register after this one, so the scan has to
-     * wait for the first read.
+     * wait for the first read. ContextPanels is a singleton for the same
+     * reason and with the same lifetime: the panel registry does not change
+     * after boot, so its class index and path list are built once per
+     * process rather than once per request or once per article.
      *
      * ArticleLookup is scoped for the same reason as CurrentPage: one lookup
      * per request answers the title and the gate verdict for every field
@@ -67,14 +74,33 @@ class FinCodexServiceProvider extends PackageServiceProvider
      * is scoped for the second half of that reason: no source memoises its
      * warnings, and the declared-help decorator reads the inner source twice
      * to produce them.
+     *
+     * PanelScopeGate is a singleton with a request-identity memo of its own,
+     * like DeclaredContextsSource: the host hook it wraps is handed to it once
+     * at panel boot and must survive the per-request flush a scoped binding
+     * would give it under Octane, while its verdict map still resets with the
+     * request.
+     *
+     * The Help Center's slug parameter gets its pattern here, on the router
+     * itself, because Filament builds a page's route with no hook for that
+     * route's own where(). Laravel merges global patterns into a route when the
+     * route is CREATED, and register() runs before every provider's boot(), so
+     * the pattern is in place before any route file is read and survives
+     * route caching — a where() attached afterwards would not. The pattern is
+     * ".*" rather than ".+" because the parameter is optional and {panel}/help
+     * has to match with no value at all.
      */
     public function packageRegistered(): void
     {
+        Route::pattern(HelpCenter::SLUG_PARAMETER, '.*');
+
         $this->app->scoped(CurrentPage::class);
         $this->app->scoped(ArticleLookup::class);
         $this->app->scoped(CoverageReport::class);
         $this->app->scoped(SourceWarnings::class);
         $this->app->singleton(DeclaredContexts::class);
+        $this->app->singleton(ContextPanels::class);
+        $this->app->singleton(PanelScopeGate::class);
         $this->app->extend(ContentSource::class, static fn (ContentSource $inner, Container $app): ContentSource => new DeclaredContextsSource($inner, $app->make(DeclaredContexts::class), $app));
     }
 

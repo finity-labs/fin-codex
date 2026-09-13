@@ -181,6 +181,29 @@ it('filters missing and outdated locales through the scopes', function (): void 
     $stale = finCodexOutdatedSeed('c-stale', 'Stale');
     finCodexOutdatedTranslate($stale, 'de', 'Veraltet');
 
+    // Three half-written German rows. Each one is what verdicts() already calls
+    // missing, so the filter has to agree with the badge on all three; a blank
+    // row can only be written around the writer, which refuses one, hence the
+    // direct table update.
+    $blankTitle = finCodexOutdatedSeed('d-blank-title', 'Blank title');
+    finCodexOutdatedTranslate($blankTitle, 'de', 'Leerer Titel');
+
+    $blankBody = finCodexOutdatedSeed('e-blank-body', 'Blank body');
+    finCodexOutdatedTranslate($blankBody, 'de', 'Leerer Text');
+
+    $whitespace = finCodexOutdatedSeed('f-whitespace', 'Whitespace');
+    finCodexOutdatedTranslate($whitespace, 'de', 'Nur Leerzeichen');
+
+    $translations = (new ArticleTranslation)->getTable();
+
+    DB::table($translations)->where('article_id', $blankTitle->id)->where('locale', 'de')->update(['title' => '']);
+    DB::table($translations)->where('article_id', $blankBody->id)->where('locale', 'de')->update(['body' => '']);
+    // Spaces only, never empty: blank() and the core's MissingTranslations both
+    // trim before they judge, so the scope must trim too. Spaces and not tabs
+    // on purpose — the one-argument TRIM every supported driver shares strips
+    // spaces and nothing else, which is the edge the scope's docblock records.
+    DB::table($translations)->where('article_id', $whitespace->id)->where('locale', 'de')->update(['body' => '   ']);
+
     $this->travelTo(now()->addMinute());
 
     ArticleTranslation::query()->where('article_id', $stale->id)->where('locale', 'en')->sole()
@@ -188,18 +211,41 @@ it('filters missing and outdated locales through the scopes', function (): void 
 
     $service = app(OutdatedTranslations::class);
 
-    expect($service->scopeMissing(Article::query(), 'de')->pluck('slug')->all())->toBe(['b-missing'])
+    expect($service->scopeMissing(Article::query(), 'de')->orderBy('slug')->pluck('slug')->all())
+        ->toBe(['b-missing', 'd-blank-title', 'e-blank-body', 'f-whitespace'])
         ->and($service->scopeOutdated(Article::query(), 'de')->pluck('slug')->all())->toBe(['c-stale'])
         ->and($service->scopeOutdated(Article::query(), 'en')->pluck('slug')->all())->toBe([])
+        // The regression guard for the default locale: every English row here
+        // is filled, so widening "missing" must not have widened this answer.
         ->and($service->scopeMissing(Article::query(), 'en')->pluck('slug')->all())->toBe([]);
+
+    // And the filter agrees with the badge on each of the three, article by
+    // article — that agreement is the whole point of the change.
+    expect(finCodexOutdatedVerdicts($blankTitle)['de'])->toBe(OutdatedTranslations::MISSING)
+        ->and(finCodexOutdatedVerdicts($blankBody)['de'])->toBe(OutdatedTranslations::MISSING)
+        ->and(finCodexOutdatedVerdicts($whitespace)['de'])->toBe(OutdatedTranslations::MISSING);
 });
 
 it('uses the configured table names', function (): void {
     finCodexOutdatedUseLanguages(['en', 'de']);
 
-    $sql = app(OutdatedTranslations::class)->scopeOutdated(Article::query(), 'de')->toSql();
+    $service = app(OutdatedTranslations::class);
 
-    expect($sql)->toContain((new ArticleTranslation)->getTable())
-        ->and($sql)->toContain((new Article)->getTable())
+    $outdated = $service->scopeOutdated(Article::query(), 'de')->toSql();
+    $missing = $service->scopeMissing(Article::query(), 'de')->toSql();
+
+    expect($outdated)->toContain((new ArticleTranslation)->getTable())
+        ->and($outdated)->toContain((new Article)->getTable())
+        ->and($missing)->toContain((new ArticleTranslation)->getTable())
         ->and(config('lin-codex.table_names.article_translations'))->toBe('codex_article_translations');
+
+    // scopeMissing() writes the table name into raw SQL, which is the one place
+    // a literal would go unnoticed: rename the table and the raw predicates
+    // have to follow it.
+    config()->set('lin-codex.table_names.article_translations', 'renamed_translations');
+
+    $renamed = app(OutdatedTranslations::class)->scopeMissing(Article::query(), 'de')->toSql();
+
+    expect($renamed)->toContain('renamed_translations')
+        ->and($renamed)->not->toContain('codex_article_translations');
 });

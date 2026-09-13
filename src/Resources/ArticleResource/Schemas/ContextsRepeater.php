@@ -9,6 +9,7 @@ use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Repeater\TableColumn;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
+use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
@@ -19,6 +20,7 @@ use FinityLabs\FinCodex\Editor\PageClassPickerTable;
 use FinityLabs\FinCodex\Editor\RoutePickerTable;
 use FinityLabs\FinCodex\Help\Declaration;
 use FinityLabs\FinCodex\Help\DeclaredContexts;
+use FinityLabs\FinCodex\Scope\ContextPanels;
 use FinityLabs\FinModalTableSelect\Components\ModalTableSelect;
 use FinityLabs\LinCodex\Enums\ContextType;
 use FinityLabs\LinCodex\Models\Article;
@@ -95,8 +97,18 @@ final class ContextsRepeater
                     ->default(ContextPicker::ANY_PANEL)
                     ->required()
                     ->live()
-                    ->afterStateUpdated(function (Set $set): void {
+                    ->afterStateUpdated(function (Get $get, Set $set, ?string $state): void {
+                        if (self::keySurvives($get, $state)) {
+                            return;
+                        }
+
                         $set('key', null);
+
+                        Notification::make()
+                            ->warning()
+                            ->title(__('fin-codex::fin-codex.editor.contexts.key_cleared'))
+                            ->body(__('fin-codex::fin-codex.editor.contexts.key_cleared_body'))
+                            ->send();
                     }),
 
                 Select::make('type')
@@ -129,8 +141,17 @@ final class ContextsRepeater
                             ->iconButton()
                             ->modalHeading(__(self::isRoute($get)
                                 ? 'fin-codex::fin-codex.editor.contexts.pick_route'
-                                : 'fin-codex::fin-codex.editor.contexts.pick_page')))
+                                : 'fin-codex::fin-codex.editor.contexts.pick_page'))
+                            // Where the sign-in and account pages went. The
+                            // line belongs on the action rather than in
+                            // PageClassPickerTable, which is handed a Table on
+                            // the modal's own Livewire component and can never
+                            // see the row's panel.
+                            ->modalDescription(self::isRoute($get) || ! self::isNamedPanel($get)
+                                ? null
+                                : __('fin-codex::fin-codex.editor.contexts.auth_any_panel')))
                         ->emptyStateSelectButton()
+                        ->helperText(fn (Get $get): ?string => self::keyPanelWarning($get))
                         ->visible(fn (Get $get): bool => ! self::isUrl($get))
                         ->required(fn (Get $get): bool => ! self::isUrl($get)),
 
@@ -138,6 +159,13 @@ final class ContextsRepeater
                         ->label(__('fin-codex::fin-codex.editor.contexts.pattern'))
                         ->placeholder('/admin/users/*')
                         ->maxLength(191)
+                        // Without a round trip of its own the closure below is
+                        // only re-evaluated on the next unrelated update, so a
+                        // freshly typed pattern would not raise its warning
+                        // until the author touched something else. On blur
+                        // rather than debounced: no round trip per keystroke.
+                        ->live(onBlur: true)
+                        ->helperText(fn (Get $get): ?string => self::urlPanelWarning($get))
                         ->visible(fn (Get $get): bool => self::isUrl($get))
                         ->required(fn (Get $get): bool => self::isUrl($get)),
                 ])->columnSpan(1),
@@ -279,6 +307,142 @@ final class ContextsRepeater
             : $key."\n".$uri;
     }
 
+    /**
+     * Whether the key the row is already holding is still offered under the
+     * panel just chosen.
+     *
+     * The select used to clear unconditionally, so an author who moved a row
+     * between panels re-picked the same resource every time. The picker knows
+     * the answer, so it is asked: "any panel" unions every panel and can never
+     * invalidate anything, a class two panels register survives the move, and a
+     * key that genuinely is not there is cleared rather than kept and flagged,
+     * so the row cannot be saved wrong and the field's own required rule blocks
+     * the save until the author picks again.
+     *
+     * A url row's pattern is free text and an author who typed one may mean it,
+     * so it is never touched here. An empty key is nothing to clear and nothing
+     * to announce.
+     */
+    private static function keySurvives(Get $get, ?string $panelId): bool
+    {
+        $key = $get('key');
+
+        if (! is_string($key) || $key === '') {
+            return true;
+        }
+
+        $picker = app(ContextPicker::class);
+
+        return match (self::type($get)) {
+            ContextType::PageClass->key() => array_key_exists(ltrim($key, '\\'), $picker->classKeys($panelId)),
+            ContextType::Route->key() => array_key_exists($key, $picker->routeKeys($panelId)),
+            default => true,
+        };
+    }
+
+    /**
+     * The row says "any panel" while its key belongs to exactly one: an
+     * inline nudge, live and non-blocking, never an error.
+     *
+     * This is the mistake the UAT actually made — an admin-only route filed
+     * under any panel with nothing objecting. It stays a warning because
+     * binding one panel's screen to every panel is unusual rather than wrong,
+     * and this package's own starter content does it deliberately. Being live
+     * rather than modal-only also means a row stored before this change, and
+     * a row a help declaration produced, surface it too.
+     *
+     * A route belonging to no panel is left alone: that is what any panel is
+     * for, and nagging about the correct choice is the failure this phase set
+     * out to stop repeating. An auth page is left alone as well, because it
+     * carries no panel at all.
+     */
+    private static function keyPanelWarning(Get $get): ?string
+    {
+        if (self::isUrl($get) || self::isNamedPanel($get)) {
+            return null;
+        }
+
+        $key = $get('key');
+
+        if (! is_string($key) || $key === '') {
+            return null;
+        }
+
+        $picker = app(ContextPicker::class);
+
+        $panel = self::isRoute($get)
+            ? self::soleRoutePanel($picker->routeRows(null), $key)
+            : self::soleClassPanel($picker->classRows(null), ltrim($key, '\\'));
+
+        return $panel === null
+            ? null
+            : (string) __('fin-codex::fin-codex.editor.contexts.key_panel_warning', ['panel' => $panel]);
+    }
+
+    /**
+     * The pattern sits under one panel's path while the row names another.
+     *
+     * The pattern is left exactly as typed — free text is free text, and an
+     * author who wrote it may mean it — but the same silent miss the key
+     * check catches is worth saying out loud. The resolution is the one the
+     * coverage report already trusts, so the editor and the report agree
+     * about which panel a path belongs to.
+     */
+    private static function urlPanelWarning(Get $get): ?string
+    {
+        if (! self::isUrl($get) || ! self::isNamedPanel($get)) {
+            return null;
+        }
+
+        $pattern = $get('url');
+
+        if (! is_string($pattern) || $pattern === '') {
+            return null;
+        }
+
+        $owner = app(ContextPanels::class)->forUrl($pattern);
+
+        return $owner === null || $owner === self::panel($get)
+            ? null
+            : (string) __('fin-codex::fin-codex.editor.contexts.url_panel_warning', ['panel' => $owner]);
+    }
+
+    /**
+     * The panel a route name belongs to, which the row already carries as a
+     * nullable value meaning exactly that. A key no row matches is a key the
+     * picker no longer offers — a different problem than this warning.
+     *
+     * @param  list<array{key: string, label: string, uri: string, panel: ?string}>  $rows
+     */
+    private static function soleRoutePanel(array $rows, string $key): ?string
+    {
+        foreach ($rows as $row) {
+            if ($row['key'] === $key) {
+                return $row['panel'];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The one panel registering a class, and null for every other count: an
+     * empty list is an auth page and several entries is a genuinely shared
+     * class, neither of which is the mistake.
+     *
+     * @param  list<array{key: string, label: string, kind: string, uri: ?string, panel: list<string>}>  $rows
+     */
+    private static function soleClassPanel(array $rows, string $key): ?string
+    {
+        foreach ($rows as $row) {
+            if ($row['key'] === $key) {
+                return count($row['panel']) === 1 ? $row['panel'][0] : null;
+            }
+        }
+
+        return null;
+    }
+
     private static function isUrl(Get $get): bool
     {
         return self::type($get) === ContextType::Url->key();
@@ -302,5 +466,13 @@ final class ContextsRepeater
         $panel = $get('panel_id');
 
         return is_string($panel) ? $panel : null;
+    }
+
+    /** Whether the row names one panel rather than the "any panel" sentinel. */
+    private static function isNamedPanel(Get $get): bool
+    {
+        $panel = self::panel($get);
+
+        return $panel !== null && $panel !== '' && $panel !== ContextPicker::ANY_PANEL;
     }
 }

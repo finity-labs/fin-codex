@@ -23,6 +23,14 @@ use Livewire\Livewire;
  * action on email (users/roles); HintForm carries the macro outside every
  * panel. The de/hu rows read their expectation back through __() so a
  * missing translation fails instead of matching the English fallback.
+ *
+ * Since Phase 16 the href a row expects depends on whether that row enters a
+ * panel: booting one — through an HTTP request or through usesPanel() — makes
+ * the plugin write that panel's own help-center path into the core's prefix
+ * before the hint is built, so those rows read /admin/help/... or
+ * /staff/help/... The rows that never enter a panel keep /help/..., which is
+ * still the truth there; if one of them ever needs moving, the prefix is
+ * leaking out of a panel request.
  */
 
 /**
@@ -93,7 +101,7 @@ it('renders the hint as an icon button with the title tooltip on a resource form
     $anchor = finCodexHintAnchor($html);
 
     expect($anchor)->not->toBeNull()
-        ->toContain('href="/help/users#assigning-roles"')
+        ->toContain('href="/admin/help/users#assigning-roles"')
         ->toContain('aria-label="Open help"')
         ->toContain("content: 'Users'")
         ->toContain("document.querySelector('[data-codex-drawer]')")
@@ -118,8 +126,8 @@ it('renders both hints when both articles exist and tells them apart by name', f
     $anchors = array_map(static fn (string $tag): string => html_entity_decode($tag, ENT_QUOTES), $m[0]);
 
     expect($anchors)->toHaveCount(2)
-        ->and($anchors[0])->toContain('href="/help/users#assigning-roles"')->toContain("content: 'Users'")
-        ->and($anchors[1])->toContain('href="/help/users/roles"')->toContain("content: 'Roles'");
+        ->and($anchors[0])->toContain('href="/admin/help/users#assigning-roles"')->toContain("content: 'Users'")
+        ->and($anchors[1])->toContain('href="/admin/help/users/roles"')->toContain("content: 'Roles'");
 });
 
 it('renders the hint inside Livewire::test of the edit page', function (): void {
@@ -128,7 +136,7 @@ it('renders the hint inside Livewire::test of the edit page', function (): void 
     $this->usesPanel('admin', $user);
 
     Livewire::test(EditUser::class, ['record' => $user->getRouteKey()])
-        ->assertSeeHtml('href="/help/users#assigning-roles"')
+        ->assertSeeHtml('href="/admin/help/users#assigning-roles"')
         ->assertSeeHtml('codex:open')
         ->assertDontSeeHtml('wire:click="mountAction');
 });
@@ -214,8 +222,10 @@ it('shows it to a user signed in on the panel guard', function (): void {
     Article::factory()->authenticated()->withTranslation('en', ['title' => 'Users'])->create(['slug' => 'users']);
     $this->usesPanel('staff', finCodexHintUser('member@example.com'));
 
+    // The staff panel's own help center, not admin's: the write follows
+    // whichever panel booted.
     Livewire::test(HintForm::class)
-        ->assertSeeHtml('href="/help/users"')
+        ->assertSeeHtml('href="/staff/help/users"')
         ->assertSeeHtml('fi-ac-icon-btn-action');
 });
 

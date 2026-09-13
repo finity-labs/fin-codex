@@ -1,7 +1,7 @@
 ---
 title: Súgócikkek írása
 excerpt: Cikkek létrehozása, fordítása és oldalakhoz rendelése a szerkesztőből.
-order: 2
+order: 3
 visibility: authenticated
 contexts:
   - class:FinityLabs\FinCodex\Resources\ArticleResource

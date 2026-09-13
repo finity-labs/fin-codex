@@ -48,7 +48,8 @@ final class PageClassPickerTable
                 TextColumn::make('panel')
                     ->label(__('fin-codex::fin-codex.editor.contexts.panel'))
                     ->badge()
-                    ->color('gray'),
+                    ->color('gray')
+                    ->placeholder('—'),
             ]);
     }
 }

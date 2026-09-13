@@ -31,6 +31,9 @@ final class ShieldStub
     /** The permission Shield would register for the fixture page. */
     public const PERMISSION = 'View:HelpSettings';
 
+    /** The permission Shield 4 builds for the article resource's viewAllPanels ability. */
+    public const VIEW_ALL_PANELS = 'ViewAllPanels:Article';
+
     /**
      * @return array<class-string, array{pageFqcn: class-string, permissions: array<string, string>}>
      */
@@ -42,5 +45,34 @@ final class ShieldStub
                 'permissions' => [self::PERMISSION => 'View'],
             ],
         ];
+    }
+
+    /**
+     * What FilamentShield::getResourcePolicyActionsWithPermissions() answers for
+     * the article resource on a host whose Shield config carries it: the policy
+     * action keyed to the permission key, built from separator ':', pascal case
+     * and the model as the subject.
+     *
+     * Same reasoning as getPages() — a key, not a rule for making one, because
+     * both halves of the name are a host's to change.
+     *
+     * @return array<string, string>
+     */
+    public static function getResourcePermissions(): array
+    {
+        return ['viewAny' => 'ViewAny:Article', 'viewAllPanels' => self::VIEW_ALL_PANELS];
+    }
+
+    /**
+     * The same answer on a host whose Shield entry predates the ability.
+     * fin-codex only added viewAllPanels to resources.manage in 0.5.0, so an
+     * entry an earlier install wrote lists the eight older abilities and Shield
+     * has no permission to hand back for this one.
+     *
+     * @return array<string, string>
+     */
+    public static function getResourcePermissionsWithoutViewAllPanels(): array
+    {
+        return array_diff_key(self::getResourcePermissions(), ['viewAllPanels' => '']);
     }
 }

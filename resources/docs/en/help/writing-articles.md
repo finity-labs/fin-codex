@@ -1,7 +1,7 @@
 ---
 title: Writing help articles
 excerpt: Creating, translating and attaching articles to pages from the editor.
-order: 2
+order: 3
 visibility: authenticated
 contexts:
   - class:FinityLabs\FinCodex\Resources\ArticleResource

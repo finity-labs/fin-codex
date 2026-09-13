@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace FinityLabs\FinCodex\Commands;
 
+use FinityLabs\FinCodex\Commands\Concerns\EditsCoreConfig;
 use FinityLabs\FinCodex\FinCodexPlugin;
+use FinityLabs\FinCodex\Pages\HelpCenter;
 use FinityLabs\FinCodex\Pages\HelpCoverage;
 use FinityLabs\FinCodex\Pages\HelpSettings;
 use FinityLabs\FinCodex\Resources\ArticleResource;
@@ -23,8 +25,9 @@ use RecursiveIteratorIterator;
  *
  * It removes the plugin registration from every panel provider that carries
  * it, drops the article resource entry from the Shield config, deletes the
- * Shield permission rows for the resource and the two pages, and offers to
- * delete the two publish groups this package has.
+ * Shield permission rows for the resource and the three pages, and offers to
+ * delete the two publish groups this package has. It also offers to switch
+ * the core's public help center back on, since the install switched it off.
  *
  * It does NOT touch a codex_* table, a Codex setting - the help settings or
  * the AI translation ones - a media file or a revision. All of those are
@@ -38,6 +41,7 @@ use RecursiveIteratorIterator;
 class UninstallCommand extends Command
 {
     use DiscoversPanelProviders;
+    use EditsCoreConfig;
     use EditsPanelProviders;
     use EditsShieldConfig;
 
@@ -46,6 +50,17 @@ class UninstallCommand extends Command
      * must not import a class that is usually absent.
      */
     private const SHIELD_FACADE = 'BezhanSalleh\\FilamentShield\\Facades\\FilamentShield';
+
+    /**
+     * The pages whose Shield permission rows this command deletes: every page
+     * fin-codex registers that asks Shield for its permission. Public and a
+     * constant so the suite can hold it against the pages that carry the
+     * trait, which is the check that would have caught the help center's
+     * absence here when 0.5.0 added the page.
+     *
+     * @var list<class-string>
+     */
+    public const SHIELD_PAGES = [HelpSettings::class, HelpCoverage::class, HelpCenter::class];
 
     protected $signature = 'fin-codex:uninstall';
 
@@ -60,6 +75,7 @@ class UninstallCommand extends Command
         $this->removeShieldConfig();
         $this->cleanupPublishedViews();
         $this->cleanupPublishedTranslations();
+        $this->restorePublicHelpCenter();
 
         $this->newLine();
         $this->info('Codex Filament plugin uninstalled. You can now run: composer remove finity-labs/fin-codex');
@@ -114,7 +130,7 @@ class UninstallCommand extends Command
 
     /**
      * Delete the permission rows Shield generated for the article resource and
-     * the two pages.
+     * the three pages.
      *
      * The names are asked of Shield rather than rebuilt, because Shield 4
      * changed both the separator and the case of every permission it writes
@@ -181,7 +197,7 @@ class UninstallCommand extends Command
             $pages = call_user_func([$facade, 'getPages']);
 
             if (is_array($pages)) {
-                foreach ([HelpSettings::class, HelpCoverage::class] as $pageClass) {
+                foreach (self::SHIELD_PAGES as $pageClass) {
                     $names = [...$names, ...$this->permissionKeysOf($pages[$pageClass] ?? null)];
                 }
             }
@@ -220,6 +236,38 @@ class UninstallCommand extends Command
         }
 
         return $keys;
+    }
+
+    /**
+     * Offer the core's public help center back.
+     *
+     * The default is yes, which is deliberately the opposite of the two
+     * prompts above it. Those delete files a host customised, so a stray
+     * keypress there costs work. This one restores a working state: the
+     * Help Center page inside the panel goes away with this package, and a
+     * host left with the public page off has no help center at all - worse
+     * than where they started.
+     *
+     * It does nothing when there is no published config to edit, and nothing
+     * when the prefix is already serving something: a host who set their own
+     * path never had the switch applied, and it is not this command's to
+     * change.
+     */
+    protected function restorePublicHelpCenter(): void
+    {
+        $path = $this->coreConfigPath();
+
+        if (! file_exists($path) || config('lin-codex.routes.help_center') !== null) {
+            return;
+        }
+
+        if (! $this->confirm('Switch the public help center (/help) back on? Removing this package removes the Help Center page inside the panel.', true)) {
+            return;
+        }
+
+        if ($this->setCoreRoutePrefix($path, '/help')) {
+            $this->info('  Public help center switched back on at /help');
+        }
     }
 
     protected function cleanupPublishedViews(): void

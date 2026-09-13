@@ -29,4 +29,6 @@ Tippen Sie in das Suchfeld oben in der Leiste. Die Treffer stammen aus allen Art
 
 ## Das Hilfecenter
 
-**Hilfecenter öffnen** unten in der Leiste zeigt dieselben Artikel als ganze Seite mit dem Abschnittsbaum daneben — zum Lesen längerer Artikel oder um einen Link zu teilen.
+Dieselben Artikel gibt es auch als ganze Seite mit dem Abschnittsbaum daneben — zum Lesen längerer Artikel oder um einen Link zu teilen. Es öffnet sich über das Benutzermenü oder über die Navigation — je nachdem, wo dieses Panel es führt — und über **Hilfecenter öffnen** unten in der Leiste.
+
+[Das Hilfecenter](help-center.md) hat den Rest.

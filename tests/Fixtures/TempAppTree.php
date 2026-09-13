@@ -131,6 +131,42 @@ return [
 ];
 PHP;
 
+    /**
+     * The published lin-codex config, cut down to the routes block but keeping
+     * the shipped file's key order and the comment that explains it.
+     *
+     * The comment is part of the fixture on purpose. The install and uninstall
+     * steps rewrite one value in place, and what a host is meant to keep is the
+     * prose around the value, not only the value itself. The {{help_center}}
+     * placeholder is filled by writeLinCodexConfig().
+     */
+    public const LIN_CODEX_CONFIG = <<<'PHP'
+<?php
+
+return [
+
+    /*
+    |--------------------------------------------------------------------------
+    | Routes
+    |--------------------------------------------------------------------------
+    |
+    | The prefix the public help center is mounted under. Set it to null and
+    | the public pages are not registered at all; the media, API and asset
+    | routes below are unaffected.
+    |
+    */
+
+    'routes' => [
+        'help_center' => {{help_center}},
+        'help_center_layout' => null,
+        'media' => '/codex/media',
+        'api' => '/codex/api',
+        'assets' => '/codex/assets',
+        'middleware' => ['web'],
+    ],
+];
+PHP;
+
     public static function providersDirectory(): string
     {
         return app_path('Providers/Filament');
@@ -144,6 +180,26 @@ PHP;
     public static function shieldConfigPath(): string
     {
         return config_path('filament-shield.php');
+    }
+
+    public static function linCodexConfigPath(): string
+    {
+        return config_path('lin-codex.php');
+    }
+
+    /**
+     * Write the core config stub with $prefix as the help-center value; null
+     * writes the switched-off state the installer leaves behind.
+     */
+    public static function writeLinCodexConfig(?string $prefix = '/help'): string
+    {
+        file_put_contents(self::linCodexConfigPath(), str_replace(
+            '{{help_center}}',
+            $prefix === null ? 'null' : "'".$prefix."'",
+            self::LIN_CODEX_CONFIG,
+        ));
+
+        return self::linCodexConfigPath();
     }
 
     /**
@@ -181,6 +237,13 @@ PHP;
     {
         if (file_exists(self::shieldConfigPath())) {
             unlink(self::shieldConfigPath());
+        }
+
+        // The Testbench skeleton ships no config/lin-codex.php, so anything at
+        // that path is either this fixture or the copy the installer published.
+        // Left behind, it would be loaded at the next test app's bootstrap.
+        if (file_exists(self::linCodexConfigPath())) {
+            unlink(self::linCodexConfigPath());
         }
 
         if (! is_dir(self::providersDirectory())) {

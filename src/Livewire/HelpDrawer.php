@@ -8,6 +8,7 @@ use Filament\Actions\Action;
 use Filament\Actions\Concerns\InteractsWithActions;
 use Filament\Actions\Contracts\HasActions;
 use Filament\Forms\Components\TextInput;
+use Filament\Pages\SimplePage;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Flex;
@@ -26,6 +27,7 @@ use Filament\Support\Enums\FontWeight;
 use Filament\Support\Enums\IconPosition;
 use Filament\Support\Enums\TextSize;
 use Filament\Support\Icons\Heroicon;
+use FinityLabs\FinCodex\FinCodexPlugin;
 use FinityLabs\LinCodex\Data\TreeNode;
 use FinityLabs\LinCodex\Livewire\HelpDrawer as CoreHelpDrawer;
 use FinityLabs\LinCodex\Reading\ReadArticle;
@@ -158,9 +160,34 @@ class HelpDrawer extends CoreHelpDrawer implements HasActions, HasSchemas
         ]);
     }
 
+    /**
+     * The shortcut hint, and "Open help center" whenever the viewer can
+     * actually walk through that door.
+     *
+     * Three reasons to withhold it, and the whole Actions group goes rather
+     * than the Action alone, so no empty wrapper is left behind. The URL is
+     * null when no help-center prefix could be computed — a tenanted panel
+     * before its tenant is known — and an action with a null URL still
+     * renders an anchor, with an empty href. A simple-layout page is a guest
+     * page, and the Help Center now lives inside the panel, behind the very
+     * login the guest is looking at (PLACE-03). And a viewer the page's own
+     * gate refuses is never offered the link, only to meet a 403 behind it.
+     *
+     * The page class comes from $this->page, the locked memo the core
+     * captures at mount, not from the current route: a Livewire update
+     * request carries no page, so a footer that asked the route would flip
+     * its own visibility between the first render and the next update. The
+     * gate is asked of the class the panel actually registered, because a
+     * helpCenterPage() override may tighten access and the shipped class
+     * would be the wrong gate to ask.
+     */
     public function footer(Schema $schema): Schema
     {
         $shortcut = $this->data()['options']['shortcut'] ?? null;
+        $url = $this->data()['helpCenterUrl'];
+        $pageClass = $this->page['class'] ?? null;
+        $isSimple = is_string($pageClass) && is_subclass_of($pageClass, SimplePage::class);
+        $mayRead = FinCodexPlugin::helpCenterPageClass($this->page['panel'] ?? null)::canAccess();
 
         return $schema->components([
             Flex::make([
@@ -172,8 +199,8 @@ class HelpDrawer extends CoreHelpDrawer implements HasActions, HasSchemas
                         ->icon(Heroicon::OutlinedArrowTopRightOnSquare)
                         ->iconPosition(IconPosition::After)
                         ->extraAttributes(['data-fin-codex-drawer-help-center' => 'true'])
-                        ->url((string) $this->data()['helpCenterUrl']),
-                ])->grow(false),
+                        ->url((string) $url),
+                ])->grow(false)->hidden($url === null || $isSimple || ! $mayRead),
                 Text::make($shortcut === null ? '' : (string) __('lin-codex::lin-codex.ui.shortcut_hint', ['shortcut' => $shortcut]))
                     ->size(TextSize::ExtraSmall)
                     ->color('gray')

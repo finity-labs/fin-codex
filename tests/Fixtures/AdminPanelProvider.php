@@ -10,7 +10,9 @@ use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Pages\Dashboard;
 use Filament\Panel;
 use Filament\PanelProvider;
+use Filament\Support\Icons\Heroicon;
 use Filament\View\PanelsRenderHook;
+use FinityLabs\FinCodex\Enums\HelpCenterPlacement;
 use FinityLabs\FinCodex\FinCodexPlugin;
 use FinityLabs\FinCodex\Tests\Fixtures\Pages\AdminHelpCoverage;
 use FinityLabs\FinCodex\Tests\Fixtures\Pages\AdminHelpSettings;
@@ -27,7 +29,9 @@ use Illuminate\View\Middleware\ShareErrorsFromSession;
 
 /**
  * The default panel: id admin, path /admin, the web guard, FinCodexPlugin
- * registered with literal option values (the staff panel uses closures). The middleware stack is the one Filament's own panel provider
+ * registered with literal option values (the staff panel uses closures). Its
+ * Help Center is placed in the NAVIGATION, so this panel carries a sidebar
+ * item and no user-menu entry. The middleware stack is the one Filament's own panel provider
  * generator emits; SetUpPanel is prepended automatically as panel:admin.
  * Carries the fixture resource, the Reports page and the registration and
  * password-reset pages so Phase 3 can prove page identity and the guest auth
@@ -66,6 +70,11 @@ final class AdminPanelProvider extends PanelProvider
                     ->globalSearch(false)
                     ->navigationGroup('Help')
                     ->navigationSort(90)
+                    ->helpCenterPlacement(HelpCenterPlacement::Navigation)
+                    ->helpCenterNavigationGroup('Reading')
+                    ->helpCenterNavigationSort(10)
+                    ->helpCenterNavigationLabel('Manual')
+                    ->helpCenterNavigationIcon(Heroicon::OutlinedAcademicCap)
                     ->articleResource(AdminHelpArticleResource::class)
                     ->settingsPage(AdminHelpSettings::class)
                     ->coveragePage(AdminHelpCoverage::class)

@@ -15,6 +15,14 @@ use FinityLabs\LinCodex\Models\Article;
  * own list right before plugins boot. Every row flips ->spa() on a fixture
  * panel before the request or the boot, because panel state is read at boot
  * time (the HelpButtonTest ->topbar(true) trick); one panel per test.
+ *
+ * Since Phase 16 the pattern comes from the panel's OWN Help Center page, not
+ * from the core's published prefix, so it reads /admin/help/* on admin and
+ * /staff/help/* on staff. The pattern and the hint's href are both relative to
+ * the application root and therefore match; a Help Center page link is absolute
+ * and therefore does not, which is what lets the hint keep its drawer intercept
+ * while a tree link still swaps the page in place. The last two rows are that
+ * pair.
  */
 
 function finCodexSpaUser(): User
@@ -64,10 +72,12 @@ it('excludes the help center from SPA navigation once the plugin boots on a SPA 
 
     $view = app(ViewManager::class);
 
+    // The /admin/users row is the regression guard for a blank prefix, which
+    // used to leave a pattern that excepted every application URL.
     expect($view->hasSpaMode())->toBeTrue()
         ->and($view->hasSpaMode('/admin/users'))->toBeTrue()
-        ->and($view->hasSpaMode('/help/users#assigning-roles'))->toBeFalse()
-        ->and($view->hasSpaMode('/help/users/roles'))->toBeFalse();
+        ->and($view->hasSpaMode('/admin/help/users#assigning-roles'))->toBeFalse()
+        ->and($view->hasSpaMode('/admin/help/users/roles'))->toBeFalse();
 });
 
 it('renders the hint anchor without wire:navigate on a SPA panel while other links keep it', function (): void {
@@ -79,7 +89,7 @@ it('renders the hint anchor without wire:navigate on a SPA panel while other lin
     $anchor = finCodexSpaAnchor($html);
 
     expect($anchor)->not->toBeNull()
-        ->toContain('href="/help/users#assigning-roles"')
+        ->toContain('href="/admin/help/users#assigning-roles"')
         ->not->toContain('wire:navigate')
         ->and(finCodexSpaNavigateAnchors($html))->toBeGreaterThanOrEqual(1);
 });
@@ -97,15 +107,21 @@ it('changes nothing without SPA mode', function (): void {
         ->and(finCodexSpaNavigateAnchors($html))->toBe(0);
 });
 
-it('honours a custom help-center prefix', function (): void {
+/*
+ * The panel's own Help Center decides the pattern, so a host that set a prefix
+ * in the core's config file no longer steers the exception: inside a panel the
+ * plugin overwrites that value with the panel's own path before the pattern is
+ * built. The config value is excepted from nothing.
+ */
+it("follows the panel's own prefix, not the config file's", function (): void {
     config(['lin-codex.routes.help_center' => '/docs']);
     Filament::getPanel('staff')->spa();
     $this->usesPanel('staff', finCodexSpaUser());
 
     $view = app(ViewManager::class);
 
-    expect($view->hasSpaMode('/docs/users'))->toBeFalse()
-        ->and($view->hasSpaMode('/help/users'))->toBeTrue();
+    expect($view->hasSpaMode('/staff/help/users'))->toBeFalse()
+        ->and($view->hasSpaMode('/docs/users'))->toBeTrue();
 });
 
 it('does not accumulate the exception across boots', function (): void {
@@ -118,7 +134,30 @@ it('does not accumulate the exception across boots', function (): void {
     Filament::getPanel('admin')->boot();
     Filament::getPanel('admin')->boot();
 
-    expect($view->hasSpaMode('/help/x'))->toBeFalse()
-        ->and(array_count_values($before)['/help/*'] ?? 0)->toBe(1)
+    expect($view->hasSpaMode('/admin/help/x'))->toBeFalse()
+        ->and(array_count_values($before)['/admin/help/*'] ?? 0)->toBe(1)
         ->and(finCodexSpaExceptions($view))->toBe($before);
+});
+
+/*
+ * The other half of the pair. A tree link on the Help Center page is built with
+ * the page's own absolute URL, which the relative exception pattern cannot
+ * match, so Filament arms Livewire's navigate listener on it and a reader who
+ * clicks one swaps the article in place. The hint anchor two rows above is the
+ * same panel, the same request cycle and the opposite answer.
+ */
+it('keeps wire:navigate on a Help Center tree link while the hint goes without it', function (): void {
+    finCodexSpaSeedUsers();
+    Filament::getPanel('admin')->spa();
+
+    $html = $this->actingAs(finCodexSpaUser(), 'web')
+        ->get('/admin/help')->assertOk()->getContent();
+
+    preg_match('/<a[^>]*data-fin-codex-help-node="users"[^>]*>/', $html, $m);
+    $treeLink = $m === [] ? null : html_entity_decode($m[0], ENT_QUOTES);
+
+    expect($treeLink)->not->toBeNull()
+        ->toContain('href="http://localhost/admin/help/users"')
+        ->toContain('wire:navigate')
+        ->and(finCodexSpaNavigateAnchors($html))->toBeGreaterThanOrEqual(1);
 });

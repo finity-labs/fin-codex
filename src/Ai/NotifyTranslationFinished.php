@@ -76,11 +76,14 @@ use Throwable;
  * and how the locale travels; here the point is that the WHOLE build runs
  * under it - the fixed title, the body, the article's own title, the language
  * names and each failure's reason label - and that the previous locale is put
- * back afterwards, since the worker goes on to other jobs. The two log lines
- * are outside it: they are not translated.
+ * back afterwards, since the worker goes on to other jobs. No log line this
+ * class writes carries translated text, so which side of that window a line
+ * falls on does not matter - and the one written when the button's URL cannot
+ * be built falls inside it, since the build is what it reports on.
  *
  * A deleted article is named by its id inside that first sentence and gets no
- * button, since there is no page left to open.
+ * button, since there is no page left to open. An article whose edit URL
+ * cannot be built loses its button the same way; compose() says why.
  */
 final class NotifyTranslationFinished
 {
@@ -111,12 +114,16 @@ final class NotifyTranslationFinished
         $article = Article::query()->with('translations')->find($event->articleId);
 
         /*
-         * Composing is inside the catch, not above it. Building the button's
-         * URL is the one step here that can throw on a host shape this
-         * listener cannot see - a panel with tenancy has no tenant to name on
-         * a worker - and a throwable escaping here fails a job whose
-         * translations are already written. A lost notification is a logged
-         * error; a lost run would not be.
+         * Composing is inside the catch, not above it: a throwable escaping
+         * here would fail a job whose translations are already written. A lost
+         * notification is a logged error; a lost run would not be.
+         *
+         * This is the last resort and nothing else. The one failure that has a
+         * shape we can name - the button's URL, on a host this listener cannot
+         * see - is caught where it happens and costs the reader the button
+         * alone; see compose(). What is left for this catch is a notification
+         * that genuinely could not be stored, which is the only thing the
+         * error line below claims.
          */
         try {
             $notification = $this->build($event, $article, $panel);
@@ -175,6 +182,16 @@ final class NotifyTranslationFinished
      * own resource override, and its own route. With no panel recorded the URL
      * resolves through the current-or-default panel, which on a worker is the
      * default one.
+     *
+     * The button is dropped, silently, when its URL cannot be built at all -
+     * the same way it is dropped for an article that no longer exists. One
+     * branch covers every host shape this listener cannot see: a panel with
+     * tenancy, whose routes all sit under a tenant segment no worker can name;
+     * a resource override the worker cannot route; a panel changed since the
+     * press. Naming a cause would be a promise about the host we cannot keep,
+     * so the branch takes anything thrown and records it at debug level. Not
+     * higher: on a tenanted panel this is every finished run, and the news -
+     * the article translated - is in the reader's hand either way.
      */
     private function compose(ArticleTranslated $event, ?Article $article, ?Panel $panel): Notification
     {
@@ -191,16 +208,30 @@ final class NotifyTranslationFinished
         if ($article !== null) {
             $panelId = $panel?->getId();
 
-            $notification->actions([
-                Action::make('open')
-                    ->label(__('fin-codex::fin-codex.notification.open'))
-                    ->url(FinCodexPlugin::articleResourceClass($panelId)::getUrl(
-                        'edit',
-                        ['record' => $event->articleId],
-                        panel: $panelId,
-                    ))
-                    ->button(),
-            ]);
+            try {
+                $url = FinCodexPlugin::articleResourceClass($panelId)::getUrl(
+                    'edit',
+                    ['record' => $event->articleId],
+                    panel: $panelId,
+                );
+            } catch (Throwable $e) {
+                $url = null;
+
+                Log::debug('fin-codex: could not build the article URL for the translation notification', [
+                    'article_id' => $event->articleId,
+                    'panel_id' => $panelId,
+                    'exception' => $e,
+                ]);
+            }
+
+            if ($url !== null) {
+                $notification->actions([
+                    Action::make('open')
+                        ->label(__('fin-codex::fin-codex.notification.open'))
+                        ->url($url)
+                        ->button(),
+                ]);
+            }
         }
 
         return $notification;

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace FinityLabs\FinCodex\Commands;
 
 use FinityLabs\FinCodex\Ai\AiSettings;
+use FinityLabs\FinCodex\Commands\Concerns\EditsCoreConfig;
 use FinityLabs\FinCodex\FinCodexPlugin;
 use FinityLabs\FinCodex\Resources\ArticleResource;
 use FinityLabs\FinSupport\Console\Concerns\DiscoversPanelProviders;
@@ -42,8 +43,11 @@ use Throwable;
  *
  * It deliberately owns very little. Articles, media, revisions, settings and
  * the search index all belong to lin-codex, which ships its own installer, so
- * this command points at (or calls) `codex:install` and never publishes or
- * migrates a single core asset itself. What is left is genuinely fin-codex's:
+ * this command points at (or calls) `codex:install` and never migrates a core
+ * table or publishes a core asset itself. Its one reach into lin-codex is the
+ * config file: since 0.5.0 the install switches the core's public help center
+ * off, and publishing that file is the only way to write the value.
+ * What is left is genuinely fin-codex's:
  * the plugin registration in a panel provider, the languages the editor
  * offers, the starter articles, the two optional publish groups this package
  * has (translations and views), and the Filament Shield wiring for the
@@ -68,6 +72,7 @@ use Throwable;
 class InstallCommand extends Command
 {
     use DiscoversPanelProviders;
+    use EditsCoreConfig;
     use EditsPanelProviders;
     use EditsShieldConfig;
     use PromptsForLocales;
@@ -75,10 +80,11 @@ class InstallCommand extends Command
     /**
      * The abilities the article resource registers with Shield. The first five
      * are Filament's own; restore (a revision restore, not a soft delete),
-     * import (adopting a file article into the database) and convert (HTML to
-     * Markdown) are fin-codex's, and only exist in a generated policy because
-     * they are listed here — `policies.merge` folds a resource's own methods
-     * into Shield's default list.
+     * import (adopting a file article into the database), convert (HTML to
+     * Markdown) and viewAllPanels (reading every panel's help from inside one
+     * panel) are fin-codex's, and only exist in a generated policy because they
+     * are listed here — `policies.merge` folds a resource's own methods into
+     * Shield's default list.
      *
      * @var list<string>
      */
@@ -91,6 +97,7 @@ class InstallCommand extends Command
         'restore',
         'import',
         'convert',
+        'viewAllPanels',
     ];
 
     /** The languages the starter articles are written in. */
@@ -101,6 +108,8 @@ class InstallCommand extends Command
     protected bool $shieldConfigured = false;
 
     protected bool $aiConfigured = false;
+
+    protected bool $publicHelpCenterSwitched = false;
 
     /** @var list<string> */
     protected array $languages = [];
@@ -127,6 +136,7 @@ class InstallCommand extends Command
         $this->newLine();
 
         $this->ensureCoreInstalled();
+        $this->switchPublicHelpCenterOff();
         $this->registerInPanel();
         $this->configureLanguages();
         $this->importStarterArticles();
@@ -144,8 +154,16 @@ class InstallCommand extends Command
             ['Find pages without help', 'Help → Help coverage'],
         ];
 
+        if ($this->publicHelpCenterSwitched) {
+            $nextSteps[] = ['Public help center', '/help is off; help now lives at {panel}/help inside the panel'];
+        }
+
         if ($this->shieldConfigured) {
-            $nextSteps[] = ['Assign permissions', 'Give the new Codex permissions to your roles in Shield'];
+            // The ability is named, the permission is not: the Shield config
+            // this process loaded predates the edit just made to it, so a name
+            // derived here would be right on a re-run and empty on a first
+            // install. Naming the ability is what ends the dead end.
+            $nextSteps[] = ['Assign permissions', 'Shield → Roles: tick the Codex permissions. viewAllPanels is the one that lets a role read every panel\'s help from inside one panel'];
         }
 
         if ($this->aiConfigured) {
@@ -183,6 +201,71 @@ class InstallCommand extends Command
         }
 
         $this->call('codex:install');
+    }
+
+    /**
+     * Switch the core's public help center off.
+     *
+     * Since 0.5.0 help lives at {panel}/help, inside the panel and behind its
+     * login, so the bare public page is a second, unthemed copy of the same
+     * articles sitting outside every panel. lin-codex reads its route prefix
+     * once and registers neither help-center route when it is null, so writing
+     * the null into the published config is the whole switch.
+     *
+     * It is a step of its own rather than something codex:install does, because
+     * codex:install is only reached on a host that has no articles table yet —
+     * an upgrading host would never see it.
+     *
+     * A host who set a prefix of their own is asked first. The default is yes,
+     * so a non-interactive run takes the switch.
+     */
+    protected function switchPublicHelpCenterOff(): void
+    {
+        // Reset first, the way registerInPanel() resets $panelId: Symfony keeps
+        // one command instance per application, so a second run in the same
+        // process would otherwise inherit the first run's answer.
+        $this->publicHelpCenterSwitched = false;
+
+        $path = $this->coreConfigPath();
+
+        if (! file_exists($path)) {
+            $this->comment('Publishing the lin-codex config...');
+            $this->callSilently('vendor:publish', ['--tag' => 'lin-codex-config']);
+        }
+
+        if (! file_exists($path)) {
+            $this->components->warn('config/lin-codex.php is not published; set routes.help_center to null by hand.');
+
+            return;
+        }
+
+        $current = config('lin-codex.routes.help_center');
+
+        if ($current === null) {
+            $this->info('  The public help center is already off (lin-codex.routes.help_center is null)');
+
+            return;
+        }
+
+        if (! $this->confirm("Switch the public help center off? It is mounted at {$current}; the Help Center page inside the panel replaces it.", true)) {
+            $this->line('  Left as it is. Both help centers will answer.');
+
+            return;
+        }
+
+        if (! $this->setCoreRoutePrefix($path, null)) {
+            $this->components->warn('Could not edit config/lin-codex.php; set routes.help_center to null by hand.');
+
+            return;
+        }
+
+        $this->publicHelpCenterSwitched = true;
+
+        $this->info('  Public help center switched off: /help now answers 404, the Help Center page inside the panel replaces it');
+
+        if (app()->routesAreCached()) {
+            $this->line('  Your routes are cached: run php artisan route:clear for this to take effect.');
+        }
     }
 
     protected function registerInPanel(): void
@@ -382,7 +465,7 @@ class InstallCommand extends Command
 
     /**
      * Write the article resource into filament-shield.php's resources.manage
-     * list. The two pages need nothing here: Shield 4 auto-discovers pages
+     * list. The three pages need nothing here: Shield 4 auto-discovers pages
      * from the panel and only reads pages.exclude from config, so they get
      * their permissions the moment the plugin is registered.
      */
@@ -420,7 +503,7 @@ class InstallCommand extends Command
         if (! $this->hasCommand('shield:generate')) {
             $this->components->warn('shield:generate is not available. Run it yourself once Shield is installed:');
             $this->line("  php artisan shield:generate{$panelFlag} --option=policies_and_permissions --ignore-existing-policies");
-            $this->line("  php artisan shield:generate{$panelFlag} --page=HelpSettings,HelpCoverage");
+            $this->line("  php artisan shield:generate{$panelFlag} --page=HelpSettings,HelpCoverage,HelpCenter");
 
             return;
         }
@@ -438,20 +521,80 @@ class InstallCommand extends Command
             $args[] = "--panel={$this->panelId}";
         }
 
-        $process = new Process($args, base_path());
-        $process->setTimeout(60);
-        $process->run();
+        [$exitCode, $output] = $this->runShieldGenerate($args);
 
-        if ($process->isSuccessful()) {
+        $this->printShieldOutput($output);
+
+        if ($exitCode === 0) {
             $this->shieldConfigured = true;
             $this->info('  Shield permissions and policies generated');
+
+            if ($this->reportsSkippedPolicy($output)) {
+                $this->components->info('Shield skipped the Article policy because fin-codex registers its own. That is expected and there is nothing to fix: the shipped policy reads Shield\'s permissions itself, so ticking them on a role is all that is left.');
+            }
         } else {
             $this->components->warn('Could not generate the Shield permissions automatically. Run manually:');
             $this->line("  php artisan shield:generate{$panelFlag} --option=policies_and_permissions --ignore-existing-policies");
         }
 
-        // Pages are discovered, not configured, so they are a separate run.
-        $this->line("  Help settings and Help coverage are discovered by Shield: php artisan shield:generate{$panelFlag} --page=HelpSettings,HelpCoverage");
+        // Pages are discovered, not configured, so they are a separate run. The
+        // help center is on this line with the two editor screens: it asks
+        // Shield for its permission the same way, so on a Shield host it is
+        // closed to every role until this has run.
+        $this->line("  Help settings, Help coverage and the Help center are discovered by Shield: php artisan shield:generate{$panelFlag} --page=HelpSettings,HelpCoverage,HelpCenter");
+    }
+
+    /**
+     * Run shield:generate and hand back its exit code and everything it said,
+     * standard and error output together.
+     *
+     * A seam, and the only reason this is a method of its own: a fresh PHP
+     * process cannot be handed a fake Artisan command, so a test that wants to
+     * prove what this command does with Shield's answer has to replace the run
+     * itself. The package test harness has no Shield at all.
+     *
+     * @param  list<string>  $args
+     *
+     * @return array{0: int, 1: string}
+     */
+    protected function runShieldGenerate(array $args): array
+    {
+        $process = new Process($args, base_path());
+        $process->setTimeout(60);
+        $process->run();
+
+        return [
+            $process->getExitCode() ?? 1,
+            trim($process->getOutput()."\n".$process->getErrorOutput()),
+        ];
+    }
+
+    /**
+     * Echo what the other process said, indented, before this command judges
+     * it. Shield's skipped-policy line lives in here and used to be swallowed.
+     */
+    protected function printShieldOutput(string $output): void
+    {
+        foreach (preg_split('/\R/', $output) ?: [] as $line) {
+            if (trim($line) !== '') {
+                $this->line('  '.trim($line));
+            }
+        }
+    }
+
+    /**
+     * Whether Shield reported skipping a policy.
+     *
+     * It always does for the article: fin-codex binds a policy for the model
+     * itself, so Shield's generator decides the model is provided for and writes
+     * no host class. Read off the output rather than assumed, so a Shield that
+     * ever stops skipping stops being explained.
+     */
+    protected function reportsSkippedPolicy(string $output): bool
+    {
+        $output = strtolower($output);
+
+        return str_contains($output, 'skipped') && str_contains($output, 'policy');
     }
 
     /**

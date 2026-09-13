@@ -1,7 +1,7 @@
 ---
 title: Hilfeartikel schreiben
 excerpt: Artikel im Editor anlegen, übersetzen und Seiten zuordnen.
-order: 2
+order: 3
 visibility: authenticated
 contexts:
   - class:FinityLabs\FinCodex\Resources\ArticleResource

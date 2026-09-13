@@ -1,7 +1,7 @@
 ---
 title: Help coverage
 excerpt: Which screens have a help article, which do not, and how to close a gap.
-order: 3
+order: 4
 visibility: authenticated
 contexts:
   - class:FinityLabs\FinCodex\Pages\HelpCoverage

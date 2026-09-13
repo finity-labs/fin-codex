@@ -9,6 +9,7 @@ use FinityLabs\LinCodex\Enums\Visibility;
 use FinityLabs\LinCodex\Models\Article;
 use FinityLabs\LinCodex\Models\ArticleTranslation;
 use FinityLabs\LinCodex\Settings\CodexSettings;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Js;
 use Livewire\Livewire;
 
@@ -236,14 +237,29 @@ it('filters by published, visibility, format and source', function (): void {
 it('filters by missing locale, and offers no outdated filter', function (): void {
     $user = finCodexListUser();
     $articles = finCodexListSeed();
+
+    // "billing" has a German row, but only half of one. The writer refuses to
+    // save a tab like this, so it is written straight to the table — an import
+    // or a hand edit is exactly where such a row comes from.
+    DB::table((new ArticleTranslation)->getTable())
+        ->where('article_id', $articles['billing']->id)
+        ->where('locale', 'de')
+        ->update(['title' => '']);
+
     $this->usesPanel('admin', $user);
 
     $component = Livewire::test(ListArticles::class)
         ->filterTable('missing', 'de')
-        ->assertCanSeeTableRecords([$articles['users/roles'], $articles['zebra']])
-        ->assertCanNotSeeTableRecords([$articles['billing'], $articles['users']]);
+        ->assertCanSeeTableRecords([$articles['billing'], $articles['users/roles'], $articles['zebra']])
+        ->assertCanNotSeeTableRecords([$articles['users']]);
 
-    expect($component->instance()->getTable()->getFilter('outdated'))->toBeNull();
+    // EDIT-11 is about agreement, not about one more row: the languages column
+    // has always painted this article's German Missing, and the filter now
+    // returns the same set it does.
+    $billing = finCodexListRow(Livewire::test(ListArticles::class)->html(), 'billing');
+
+    expect(finCodexListFlagState($billing, 'de'))->toBe('missing')
+        ->and($component->instance()->getTable()->getFilter('outdated'))->toBeNull();
 });
 
 it('searches by slug and by title', function (): void {

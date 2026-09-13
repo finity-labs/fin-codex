@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace FinityLabs\FinCodex\Coverage;
 
-use Filament\Facades\Filament;
 use Filament\Pages\Page as BasePage;
 use Filament\Resources\Pages\Page as ResourcePage;
 use FinityLabs\FinCodex\Editor\ContextPicker;
 use FinityLabs\FinCodex\FinCodexPlugin;
 use FinityLabs\FinCodex\Help\DeclaredContextsSource;
 use FinityLabs\FinCodex\Resources\ArticleResource;
+use FinityLabs\FinCodex\Scope\ContextPanels;
 use FinityLabs\LinCodex\Contexts\ContextIndex;
 use FinityLabs\LinCodex\Contexts\PageContext;
 use FinityLabs\LinCodex\Contracts\ContentSource;
@@ -50,21 +50,30 @@ use Spatie\LaravelSettings\Exceptions\MissingSettings;
  * this counts screens and additionally credits a resource-class context. The
  * README says so (Phase 8).
  *
+ * Which panel a row belongs to is not decided here: Scope\ContextPanels
+ * answers that, so the coverage page, the panel scope gate and the Help
+ * Center's panel filter cannot disagree about where a screen files.
+ *
  * ContextResolver is deliberately not used: it applies ArticleGate and the
  * locale pick, and coverage asks whether a MAPPING exists, not whether the
  * current viewer may read it — RouteCoverage's own documented stance.
  */
 final class CoverageReport
 {
-    /** The panel filter's value for rows that belong to no panel. */
-    public const OUTSIDE_PANELS = '__outside';
+    /**
+     * The panel filter's value for rows that belong to no panel. The value
+     * lives on the resolver, which every panel-scoping consumer shares; this
+     * alias stays because the coverage page and the coverage tests read it
+     * here.
+     */
+    public const OUTSIDE_PANELS = ContextPanels::OUTSIDE_PANELS;
 
     private ?Request $memoRequest = null;
 
     /** @var list<CoverageRow>|null */
     private ?array $memo = null;
 
-    public function __construct(private readonly Application $app) {}
+    public function __construct(private readonly Application $app, private readonly ContextPanels $panels) {}
 
     /**
      * Memoised on the request instance, exactly like Panel\CurrentPage: the
@@ -191,7 +200,7 @@ final class CoverageReport
         $groups = [];
 
         foreach ($report as $route) {
-            $panelId = $this->panelId($route->name);
+            $panelId = $this->panels->forRoute($route->name);
             $helpClass = self::helpClass($route->pageClass, $panelId);
             $key = $helpClass !== null ? $panelId.'|'.$helpClass : $route->name;
 
@@ -276,24 +285,6 @@ final class CoverageReport
         $declared = $article->meta[DeclaredContextsSource::META_KEY] ?? [];
 
         return is_array($declared) && in_array($matchedBy, $declared, true);
-    }
-
-    /**
-     * The panel a route name belongs to. Every panel route is
-     * `filament.{id}.…` (a multi-domain panel inserts the domain after the
-     * id), so the id is matched with its trailing dot against the registered
-     * panels rather than parsed out of the name: ids that prefix one another
-     * would otherwise collide.
-     */
-    private function panelId(string $routeName): ?string
-    {
-        foreach (Filament::getPanels() as $panel) {
-            if (str_starts_with($routeName, 'filament.'.$panel->getId().'.')) {
-                return $panel->getId();
-            }
-        }
-
-        return null;
     }
 
     /**

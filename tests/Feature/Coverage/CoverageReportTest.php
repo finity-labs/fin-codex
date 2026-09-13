@@ -4,6 +4,7 @@ use Filament\Pages\Dashboard;
 use FinityLabs\FinCodex\Coverage\CoverageReport;
 use FinityLabs\FinCodex\Coverage\CoverageRow;
 use FinityLabs\FinCodex\Editor\ContextPicker;
+use FinityLabs\FinCodex\Pages\HelpCenter;
 use FinityLabs\FinCodex\Resources\ArticleResource;
 use FinityLabs\FinCodex\Tests\Fixtures\Pages\AdminHelpSettings;
 use FinityLabs\FinCodex\Tests\Fixtures\Pages\Reports;
@@ -403,6 +404,27 @@ it('counts exactly the uncovered rows of the panel it is asked about', function 
 
     expect($report->uncovered('admin'))->toBe(count($admin))
         ->and($report->uncovered('admin'))->toBeGreaterThan(0);
+});
+
+/*
+ * DOCS-03, measured on the report rather than on the article file: the starter
+ * article help/help-center carries the Help Center page class as its context,
+ * panel-stamped exactly as the installer stamps it, so the one screen
+ * fin-codex used to ship uncovered is its own no longer.
+ */
+it('closes the Help Center row with the starter article\'s page-class context', function (): void {
+    $uncoveredWithout = app(CoverageReport::class)->uncovered('admin');
+
+    finCodexCoverageArticle('help/help-center', ContextType::PageClass, HelpCenter::class, 'admin');
+    forgetHelpMemo();
+
+    $rows = finCodexCoverageRowsFor('admin', HelpCenter::class);
+
+    expect($rows)->toHaveCount(1)
+        ->and($rows[0]->covered())->toBeTrue()
+        ->and($rows[0]->slug)->toBe('help/help-center')
+        ->and($rows[0]->matchedBy)->toBe('admin:class:'.HelpCenter::class)
+        ->and(app(CoverageReport::class)->uncovered('admin'))->toBe($uncoveredWithout - 1);
 });
 
 it('counts the rows that belong to no panel for a null panel', function (): void {

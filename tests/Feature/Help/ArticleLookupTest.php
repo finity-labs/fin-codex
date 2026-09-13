@@ -185,12 +185,16 @@ it('resolves the article set once per request and again for a new request', func
     $counter = app(ContentSource::class);
     $lookup = finCodexLookup();
 
+    // Two reads per request, one each: this lookup and the panel scope gate,
+    // which the booted panel installed as the core's hook and which memoises
+    // its verdict map on the same request instance. Two title() calls add
+    // nothing to either, which is what this row is for.
     expect($lookup->title('users'))->toBe('Users')
         ->and($lookup->title('other'))->toBeNull()
-        ->and($counter::$allCalls)->toBe(1);
+        ->and($counter::$allCalls)->toBe(2);
 
     app()->instance('request', Request::create('/next'));
 
     expect($lookup->title('users'))->toBe('Users')
-        ->and($counter::$allCalls)->toBe(2);
+        ->and($counter::$allCalls)->toBe(4);
 });

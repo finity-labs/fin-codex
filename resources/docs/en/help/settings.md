@@ -1,7 +1,7 @@
 ---
 title: Help settings
 excerpt: Languages, the reading fallback and revision retention.
-order: 4
+order: 5
 visibility: authenticated
 contexts:
   - class:FinityLabs\FinCodex\Pages\HelpSettings

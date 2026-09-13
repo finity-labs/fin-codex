@@ -24,6 +24,12 @@ use Illuminate\View\Middleware\ShareErrorsFromSession;
  * guard, no topbar (so the help button must fall back to the sidebar footer),
  * no dark mode (so the theme wrapper carries a static light class) and no
  * explicit helpButtonRenderHook(). Phase 3's fallback and theme tests run here.
+ *
+ * It is also the only fixture panel with a profile page and an email
+ * verification prompt, so the context picker has something to prove those two
+ * auth rows against. The prompt is registered with isRequired: false on
+ * purpose: the page exists without an email-verified requirement landing on
+ * the panel Phase 3's tests drive.
  */
 final class PortalPanelProvider extends PanelProvider
 {
@@ -33,6 +39,8 @@ final class PortalPanelProvider extends PanelProvider
             ->id('portal')
             ->path('portal')
             ->login()
+            ->profile()
+            ->emailVerification(isRequired: false)
             ->topbar(false)
             ->darkMode(false)
             ->pages([Dashboard::class])

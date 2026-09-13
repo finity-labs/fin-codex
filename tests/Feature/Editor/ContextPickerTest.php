@@ -1,8 +1,18 @@
 <?php
 
+use Filament\Auth\MultiFactor\Pages\SetUpRequiredMultiFactorAuthentication;
+use Filament\Auth\Pages\EditProfile;
+use Filament\Auth\Pages\EmailVerification\EmailVerificationPrompt;
+use Filament\Auth\Pages\Login;
+use Filament\Auth\Pages\PasswordReset\RequestPasswordReset;
+use Filament\Auth\Pages\PasswordReset\ResetPassword;
+use Filament\Auth\Pages\Register;
 use Filament\Pages\Dashboard;
+use Filament\Panel;
+use Filament\PanelRegistry;
 use FinityLabs\FinCodex\Editor\ContextPicker;
 use FinityLabs\FinCodex\Resources\ArticleResource;
+use FinityLabs\FinCodex\Tests\Fixtures\FixtureMultiFactorProvider;
 use FinityLabs\FinCodex\Tests\Fixtures\Pages\Reports;
 use FinityLabs\FinCodex\Tests\Fixtures\Resources\AdminHelpArticleResource;
 use FinityLabs\FinCodex\Tests\Fixtures\Resources\StaffHelpArticleResource;
@@ -70,6 +80,103 @@ it('lists resources and pages of one panel as class keys with navigation labels'
     expect($labels)->toBe($sorted);
 });
 
+/** @return list<class-string> The auth pages the four fixture panels switch on. */
+function finCodexFixtureAuthClasses(): array
+{
+    return [
+        Login::class,
+        Register::class,
+        RequestPasswordReset::class,
+        ResetPassword::class,
+        EmailVerificationPrompt::class,
+        EditProfile::class,
+    ];
+}
+
+it('offers the panel auth pages under any panel and nowhere else', function (): void {
+    $union = finCodexPicker()->classKeys(null);
+
+    foreach (finCodexFixtureAuthClasses() as $class) {
+        expect(array_key_exists($class, $union))->toBeTrue();
+    }
+
+    // The named-panel lists are the whole point: a context naming a panel and
+    // an auth class resolves to no panel at all, which would hide the article
+    // everywhere. The binding has to be unwritable, not merely discouraged.
+    foreach (['admin', 'staff', 'plain', 'portal'] as $panelId) {
+        $scoped = finCodexPicker()->classKeys($panelId);
+
+        foreach (finCodexFixtureAuthClasses() as $class) {
+            expect(array_key_exists($class, $scoped))->toBeFalse();
+        }
+    }
+});
+
+it('labels auth rows from this package and takes their path from the panel routes', function (): void {
+    $union = collect(finCodexPicker()->classRows(null))->keyBy('key');
+
+    expect($union[Login::class])->toBe([
+        'key' => Login::class,
+        'label' => __('fin-codex::fin-codex.editor.contexts.auth.login'),
+        'kind' => __('fin-codex::fin-codex.editor.contexts.auth_page'),
+        'uri' => '/admin/login',
+        'panel' => [],
+    ]);
+
+    expect($union[Register::class]['label'])->toBe(__('fin-codex::fin-codex.editor.contexts.auth.register'))
+        ->and($union[RequestPasswordReset::class]['label'])->toBe(__('fin-codex::fin-codex.editor.contexts.auth.password_reset_request'))
+        ->and($union[ResetPassword::class]['label'])->toBe(__('fin-codex::fin-codex.editor.contexts.auth.password_reset'))
+        ->and($union[EmailVerificationPrompt::class]['label'])->toBe(__('fin-codex::fin-codex.editor.contexts.auth.email_verification'))
+        ->and($union[EmailVerificationPrompt::class]['uri'])->toBe('/portal/email-verification/prompt');
+
+    // The profile page is a real Filament page, so navigationLabel() answers
+    // for it — with Filament's own hardcoded English. The role label has to
+    // win outright, or this is the one untranslated row in a de or hu panel.
+    expect($union[EditProfile::class]['label'])->toBe(__('fin-codex::fin-codex.editor.contexts.auth.profile'))
+        ->and($union[EditProfile::class]['label'])->not->toBe('Edit Profile')
+        ->and($union[EditProfile::class]['kind'])->toBe(__('fin-codex::fin-codex.editor.contexts.auth_page'))
+        ->and($union[EditProfile::class]['uri'])->toBe('/portal/profile')
+        ->and($union[EditProfile::class]['panel'])->toBe([]);
+
+    // A feature no panel switched on contributes no row.
+    expect($union->has(SetUpRequiredMultiFactorAuthentication::class))->toBeFalse();
+});
+
+it('offers the two-factor setup page only where the panel requires it', function (): void {
+    // The facade's registerPanel() does not take effect mid-test in this
+    // harness; the registry does, and the picker memoises nothing, so the next
+    // call already sees the panel. A runtime panel registers no routes, which
+    // is why the row carries no path.
+    app(PanelRegistry::class)->register(
+        Panel::make()
+            ->id('mfa')
+            ->path('mfa')
+            ->multiFactorAuthentication([new FixtureMultiFactorProvider], isRequired: true),
+    );
+
+    $union = collect(finCodexPicker()->classRows(null))->keyBy('key');
+
+    expect($union->has(SetUpRequiredMultiFactorAuthentication::class))->toBeTrue()
+        ->and($union[SetUpRequiredMultiFactorAuthentication::class]['label'])->toBe(__('fin-codex::fin-codex.editor.contexts.auth.mfa_setup'))
+        ->and($union[SetUpRequiredMultiFactorAuthentication::class]['kind'])->toBe(__('fin-codex::fin-codex.editor.contexts.auth_page'))
+        ->and($union[SetUpRequiredMultiFactorAuthentication::class]['uri'])->toBeNull()
+        ->and($union[SetUpRequiredMultiFactorAuthentication::class]['panel'])->toBe([]);
+});
+
+it('leaves the two-factor setup page out where the panel merely offers it', function (): void {
+    // The getter returns the same class-string either way — the setter fills
+    // the property from its own default — so the gate is the only thing
+    // telling an optional setup page from a required one.
+    app(PanelRegistry::class)->register(
+        Panel::make()
+            ->id('mfa')
+            ->path('mfa')
+            ->multiFactorAuthentication([new FixtureMultiFactorProvider], isRequired: false),
+    );
+
+    expect(array_key_exists(SetUpRequiredMultiFactorAuthentication::class, finCodexPicker()->classKeys(null)))->toBeFalse();
+});
+
 it('lists named GET routes per panel filtered by the coverage ignore list', function (): void {
     Route::get('/fin-codex-scratch', fn (): string => '')->name('fin-codex-test.scratch');
 
@@ -126,6 +233,10 @@ it('resolves labels for every type and null for blanks', function (): void {
         ->and($picker->label(null, null, null))->toBeNull()
         ->and($picker->label('admin', 'class', ''))->toBeNull()
         ->and($picker->label('admin', 'route', 'filament.admin.auth.login'))->toBeNull();
+
+    // A stored auth context reads as its role label, and only under any panel.
+    expect($picker->label(null, 'class', Login::class))->toBe(__('fin-codex::fin-codex.editor.contexts.auth.login'))
+        ->and($picker->label('admin', 'class', Login::class))->toBeNull();
 });
 
 it('describes class keys as picker rows with kind, path and panels', function (): void {

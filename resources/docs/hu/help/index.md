@@ -29,4 +29,6 @@ Gépeljen a panel tetején lévő keresőmezőbe. A találatok minden olyan cikk
 
 ## A súgóközpont
 
-A panel alján lévő **Súgóközpont megnyitása** ugyanezeket a cikkeket teljes oldalként mutatja, mellette a szakaszfával — hosszabb cikkek olvasásához vagy egy hivatkozás megosztásához.
+Ugyanezek a cikkek teljes oldalként is megvannak, mellettük a szakaszfával — hosszabb cikkek olvasásához vagy egy hivatkozás megosztásához. A felhasználói menüből vagy a navigációból nyílik meg — attól függően, hova tette ez a panel —, és a súgópanel alján lévő **Súgóközpont megnyitása** elemmel is.
+
+[A súgóközpont](help-center.md) tartalmazza a többit.
