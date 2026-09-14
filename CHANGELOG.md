@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-09-14
+
+### Fixed
+
+- **Open the help center**, at the bottom of the drawer, reaches the article the reader has open. It resolves to `{panel}/help/{slug}` and falls back to the Help Center's root only when the drawer is showing no article. The root was the only place it could ever land before, so a reader who followed it lost their place every time. The three cases where the whole action group is withheld are unchanged: no URL could be built (a tenanted panel before its tenant is known), a simple-layout page, and a viewer the page's own gate refuses
+- The Help Center's contents tree shows which article is being read. That entry is the only one in the primary colour, its siblings are grey, and it alone carries `aria-current="page"` so a screen reader is told what the colour tells everyone else. The old marker set primary on the current entry — which is the colour Filament already gives a link action that asks for none, so every entry in the tree carried it and the marker showed nothing at all. The drawer's tree, which has had the contrast right all along, gained the `aria-current` half
+- A section whose root is itself an article collapses. The heading is still the link that opens the article, a chevron beside it folds and unfolds the children, and clicking the label opens the article without folding anything. Only folder groups used to get a section, and the starter set has none, so on a host with the shipped articles the tree held nothing collapsible at all. **The drawer's Contents tab had the identical defect and is fixed with it.** Two things follow from the new sections: on the Help Center a link to an article nested under another article arrives with both ancestors unfolded rather than hidden inside them, and the drawer's sections keep the state you left them in, each under a key of its own, which they never did before
+- An upgrading host receives the corrected starter articles. `fin-codex:install` now refreshes a starter article nobody has written to since it was imported, in each configured language, and names the ones it left alone. 0.5.0 rewrote the tail of **Getting help** and gave it the shipped set's first article-to-article link; only a fresh install ever saw either, because the importer skips a slug that already exists. Only the title, excerpt and body move — where, whether and in what order an article appears is untouched, so its contexts, its panel, its published state, visibility, order, icon, keywords, related articles and metadata are all left as the host arranged them. With revisions on, the replaced text is kept as an import revision to read and restore. An article the host has edited is never overwritten, no flag overrides that, and the command prints the ones it skipped so the host learns which of their articles are now behind the shipped docs. See the README's Upgrading section
+
+### Added
+
+- A language configured after the install gets the starter articles in it on the next `fin-codex:install`, through the same refresh. Adding a language to Help settings a year after installing used to leave the starter set in the languages it was first imported in, with nothing that would ever fill the new one
+
+### Changed
+
+- An article's nested children sit in the section's own body instead of an indented block, so the 1 rem indent and the line down the left are gone from every entry nested under an article, on the Help Center rail and in the drawer. It is what the collapsible sections above cost, and it is the first thing a reader will notice
+
 ## [0.5.0] - 2026-09-13
 
 ### Added

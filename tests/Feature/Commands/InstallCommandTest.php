@@ -8,13 +8,17 @@ use FinityLabs\FinCodex\Resources\ArticleResource;
 use FinityLabs\FinCodex\Tests\Fixtures\Commands\DecliningInstallCommand;
 use FinityLabs\FinCodex\Tests\Fixtures\Commands\ShieldStubInstallCommand;
 use FinityLabs\FinCodex\Tests\Fixtures\TempAppTree;
+use FinityLabs\LinCodex\Enums\RevisionReason;
 use FinityLabs\LinCodex\Enums\Visibility;
 use FinityLabs\LinCodex\Models\Article;
 use FinityLabs\LinCodex\Models\ArticleContext;
+use FinityLabs\LinCodex\Models\ArticleRevision;
 use FinityLabs\LinCodex\Models\ArticleTranslation;
 use FinityLabs\LinCodex\Settings\CodexSettings;
+use FinityLabs\LinCodex\Sources\FilesystemSource;
 use FinityLabs\LinSupport\Locale\InstalledLocales;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 
 /*
  * CLI-01, the install half.
@@ -54,6 +58,29 @@ function finCodexRunCommand(string $command, array $parameters = []): array
     $exitCode = test()->artisan($command, [...$parameters, '--no-interaction' => true]);
 
     return [$exitCode, Artisan::output()];
+}
+
+/**
+ * The body one starter article's file carries in this version, read through
+ * the core's own file source the way the command reads it, so an assertion
+ * about a refreshed article cannot drift when the docs are rewritten again.
+ */
+function finCodexShippedBody(string $slug, string $locale): string
+{
+    $key = 'lin-codex.sources.filesystem.paths';
+    $hostPaths = config($key, []);
+
+    config()->set($key, [InstallCommand::starterDocsPath()]);
+    app()->forgetInstance(FilesystemSource::class);
+
+    try {
+        $article = app(FilesystemSource::class)->set()->articles[$slug] ?? null;
+    } finally {
+        config()->set($key, $hostPaths);
+        app()->forgetInstance(FilesystemSource::class);
+    }
+
+    return (string) $article?->translation($locale)?->body;
 }
 
 it('registers the plugin in the chosen panel provider', function () {
@@ -336,18 +363,76 @@ it('imports the starter articles in the configured languages only, as database a
         ->and(config('lin-codex.sources.filesystem.paths'))->not->toContain(InstallCommand::starterDocsPath());
 });
 
-it('leaves existing starter articles alone on a repeated install', function () {
+it('refreshes a stale starter article on a repeated install and leaves an edited one alone', function () {
     TempAppTree::writePanelProvider('admin');
 
     finCodexRunCommand('fin-codex:install', ['--panel' => 'admin', '--locales' => 'en']);
+    enableRevisions(true);
+
+    // The install was yesterday. Both stamps go back together, which is what
+    // the import leaves behind, and it puts the host's edit below a
+    // measurable distance later — the two columns hold whole seconds, so an
+    // edit made in the same second as the install would be unprovable.
+    ArticleTranslation::query()->update(['created_at' => now()->subDay(), 'updated_at' => now()->subDay()]);
+
+    // The state an upgrade lands in, in one database: an article the host
+    // has made their own, and an article nobody has touched since it was
+    // imported that still carries the text an older version shipped.
     Article::query()->where('slug', 'help')->sole()->translations()->where('locale', 'en')->update(['title' => 'Edited by the admin']);
+
+    $stale = Article::query()->where('slug', 'help/writing-articles')->sole();
+    $oldBody = "# Writing articles\n\nThe text an older version shipped.";
+
+    ArticleTranslation::query()
+        ->where('article_id', $stale->id)
+        ->where('locale', 'en')
+        // updated_at is not fillable, and it has to go back to created_at:
+        // that pair is what says nothing has been written to the row since
+        // the import that created it.
+        ->update(['body' => $oldBody, 'updated_at' => DB::raw('created_at')]);
+
+    $before = [$stale->is_published, $stale->visibility, $stale->sort_order, $stale->contexts()->orderBy('id')->pluck('key')->all()];
 
     [$exitCode, $output] = finCodexRunCommand('fin-codex:install', ['--panel' => 'admin', '--locales' => 'en']);
 
+    $stale->refresh();
+    $after = [$stale->is_published, $stale->visibility, $stale->sort_order, $stale->contexts()->orderBy('id')->pluck('key')->all()];
+    $revision = ArticleRevision::query()->where('article_id', $stale->id)->where('locale', 'en')->sole();
+
     expect($exitCode)->toBe(0)
-        ->and($output)->toContain('already present')
+        // Naming one slug and no other is the differential: the ten articles
+        // that already carry the shipped text are reported nowhere.
+        ->and($output)->toContain('  Starter articles refreshed in en: help/writing-articles'.PHP_EOL)
+        ->and($output)->toContain('  Starter articles you have edited, left as they are: help (en)'.PHP_EOL)
+        ->and($output)->not->toContain('already present')
         ->and(Article::query()->count())->toBe(12)
-        ->and(ArticleTranslation::query()->where('locale', 'en')->where('title', 'Edited by the admin')->count())->toBe(1);
+        ->and($stale->translations()->where('locale', 'en')->value('body'))->toBe(finCodexShippedBody('help/writing-articles', 'en'))
+        ->and(ArticleTranslation::query()->where('locale', 'en')->where('title', 'Edited by the admin')->count())->toBe(1)
+        // The replaced body is recoverable, attributed to the import.
+        ->and($revision->reason)->toBe(RevisionReason::Import)
+        ->and($revision->body)->toBe($oldBody)
+        // A docs refresh moves the text and nothing else: not where the
+        // article appears, not whether it appears, not in what order.
+        ->and($after)->toBe($before);
+});
+
+it('fills in a language configured after the install', function () {
+    TempAppTree::writePanelProvider('admin');
+
+    finCodexRunCommand('fin-codex:install', ['--panel' => 'admin', '--locales' => 'en']);
+
+    expect(ArticleTranslation::query()->distinct()->pluck('locale')->all())->toBe(['en']);
+
+    [$exitCode, $output] = finCodexRunCommand('fin-codex:install', ['--panel' => 'admin', '--locales' => 'en,de']);
+
+    expect($exitCode)->toBe(0)
+        // Every slug exists already, so the importer skips all twelve and the
+        // refresh is the only thing that can write the new language.
+        ->and($output)->toContain('  Starter articles refreshed in de: '.implode(', ', InstallCommand::starterSlugs()).PHP_EOL)
+        ->and($output)->not->toContain('you have edited')
+        ->and(Article::query()->count())->toBe(12)
+        ->and(ArticleTranslation::query()->where('locale', 'de')->count())->toBe(12)
+        ->and(Article::query()->where('slug', 'help')->sole()->translations()->where('locale', 'de')->value('body'))->toBe(finCodexShippedBody('help', 'de'));
 });
 
 it('imports nothing with --skip-starter-articles, and nothing when no configured language has starter articles', function () {

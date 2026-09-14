@@ -441,9 +441,19 @@ class HelpCenter extends Page
     }
 
     /**
-     * The Contents tab: the whole tree the viewer may read, a collapsible
-     * section per folder group and a link per article, an article's own children
-     * nested beneath it.
+     * The Contents tab: the whole tree the viewer may read. A node that has
+     * children is a collapsible section, whether it is a folder group or an
+     * article — an article-rooted section keeps its own link as the heading, so
+     * the label opens the article and the chevron beside it works the children.
+     * A node with no children is the link alone.
+     *
+     * The entry for the article being read is primary where every other entry
+     * is gray, and it alone says it is the current page. Colour on its own is
+     * not a marker: an entry that looks like its siblings tells the reader
+     * nothing, which is what the v0.5 audit found here.
+     *
+     * The root article appears once. The heading link is the only way into it,
+     * so nothing repeats it among its children.
      *
      * The depth only picks the FIRST-VISIT open state: the top level comes up
      * expanded so real article titles are there to read at once, and anything
@@ -473,21 +483,45 @@ class HelpCenter extends Page
                 continue;
             }
 
-            $link = $this->linkTo($node->slug, $node->label);
+            // merge: true is required both times — linkTo() already carries the
+            // node marker in its own attribute bag, and a second bare call
+            // would replace it rather than add to it.
+            $link = $this->linkTo($node->slug, $node->label)
+                ->color($node->slug === $this->codexSlug ? 'primary' : 'gray');
 
             if ($node->slug === $this->codexSlug) {
-                $link = $link
-                    ->color('primary')
-                    ->extraAttributes(['data-fin-codex-help-active' => 'true'], merge: true);
+                $link = $link->extraAttributes([
+                    'aria-current' => 'page',
+                    'data-fin-codex-help-active' => 'true',
+                ], merge: true);
             }
 
-            $components[] = $node->children === []
-                ? Actions::make([$link])
-                : Group::make([
-                    Actions::make([$link]),
-                    Group::make($this->treeComponents($node->children, $depth + 1))
-                        ->extraAttributes(['class' => 'fin-codex-help__children']),
-                ]);
+            if ($node->children === []) {
+                $components[] = Actions::make([$link]);
+
+                continue;
+            }
+
+            // A Filament Action is Htmlable, so the whole link renders inside
+            // the section's heading. The guard is what keeps a click on the
+            // label from flipping the section as well as opening the article:
+            // Filament's toggle listens on the element around the heading. An
+            // empty string, never true — a true value renders as its own
+            // attribute name, which Alpine would try to evaluate.
+            $link = $link->extraAttributes(['x-on:click.stop' => ''], merge: true);
+
+            $components[] = Section::make($link)
+                // Not optional. Filament's own key closure would put the heading
+                // through a string-typed helper, and an Action cannot be cast to
+                // one; setting the key replaces the closure so it never runs.
+                ->key($this->sectionId($node->slug).'::section')
+                ->id($this->sectionId($node->slug))
+                ->compact()
+                ->collapsible()
+                ->persistCollapsed()
+                ->collapsed($depth > 0)
+                ->extraAttributes(['data-fin-codex-help-node' => $node->slug])
+                ->schema($this->treeComponents($node->children, $depth + 1));
         }
 
         return $components;
@@ -532,13 +566,15 @@ class HelpCenter extends Page
     }
 
     /**
-     * The section ids of the current article's ancestors that are folder groups,
-     * outermost first.
+     * The section ids of the current article's ancestors, outermost first.
      *
-     * Only groups qualify: an ancestor that is an article is a link, which has
-     * nothing to open. Empty on the landing, and empty for an article whose
-     * ancestors are all articles, in which case nothing is rendered at all
-     * rather than an inert block.
+     * Every ancestor that has children qualifies, because every one of them is
+     * a collapsible section now — an article with children included. Anything
+     * below the top level comes up closed on a first visit, so without this an
+     * article nested under an article would arrive with its own entry hidden.
+     *
+     * Empty on the landing, and empty for an article with no ancestors at all,
+     * in which case nothing is rendered rather than an inert block.
      *
      * @return list<string>
      */
@@ -548,7 +584,7 @@ class HelpCenter extends Page
             return [];
         }
 
-        $groups = $this->groupSlugs($this->tree());
+        $sections = $this->sectionSlugs($this->tree());
         $segments = explode('/', $this->codexSlug);
         array_pop($segments);
 
@@ -558,7 +594,7 @@ class HelpCenter extends Page
         foreach ($segments as $segment) {
             $path = $path === '' ? $segment : $path.'/'.$segment;
 
-            if (in_array($path, $groups, true)) {
+            if (in_array($path, $sections, true)) {
                 $ids[] = $this->sectionId($path);
             }
         }
@@ -567,22 +603,23 @@ class HelpCenter extends Page
     }
 
     /**
-     * Every folder group in the tree, at any depth.
+     * Every node in the tree that is drawn as a collapsible section, at any
+     * depth: anything with children, folder group or article alike.
      *
      * @param  list<TreeNode>  $nodes
      *
      * @return list<string>
      */
-    private function groupSlugs(array $nodes): array
+    private function sectionSlugs(array $nodes): array
     {
         $slugs = [];
 
         foreach ($nodes as $node) {
-            if ($node->isGroup()) {
+            if ($node->children !== []) {
                 $slugs[] = $node->slug;
             }
 
-            $slugs = [...$slugs, ...$this->groupSlugs($node->children)];
+            $slugs = [...$slugs, ...$this->sectionSlugs($node->children)];
         }
 
         return $slugs;
@@ -924,6 +961,12 @@ class HelpCenter extends Page
      *
      * Named after the slug the way the drawer names its own, so two links to
      * one article in one schema do not collide.
+     *
+     * The colour is the caller's. Filament renders a link action with no colour
+     * of its own in the primary one, so the tree sets gray on every entry but
+     * the article being read — the contrast CENTER-02 asks for. The four other
+     * callers here (search hits, breadcrumbs, related, the landing list) are
+     * not a tree and keep what they have.
      */
     protected function linkTo(string $slug, string $label): Action
     {

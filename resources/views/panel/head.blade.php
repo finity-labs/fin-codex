@@ -36,10 +36,6 @@
     .fin-codex-drawer__content {
         padding: 1rem;
     }
-    .fin-codex-drawer__children {
-        padding-inline-start: 1rem;
-        border-inline-start: 1px solid var(--codex-border);
-    }
     .fin-codex-drawer__footer {
         flex: none;
         padding: 0.75rem 1rem;
@@ -53,10 +49,6 @@
         max-height: calc(100vh - 9rem);
         overflow-y: auto;
         overscroll-behavior: contain;
-    }
-    .fin-codex-help__children {
-        padding-inline-start: 1rem;
-        border-inline-start: 1px solid var(--codex-border);
     }
     .fin-codex-help__article {
         min-width: 0;

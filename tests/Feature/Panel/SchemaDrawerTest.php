@@ -7,6 +7,7 @@ use FinityLabs\FinCodex\Tests\Fixtures\User;
 use FinityLabs\LinCodex\Enums\ContextType;
 use FinityLabs\LinCodex\Models\Article;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Js;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 
@@ -32,6 +33,12 @@ function finCodexSchemaDrawer(string $pageClass = Dashboard::class): Testable
     test()->usesPanel('admin', User::create(['name' => 'Tester', 'email' => 'drawer@example.com']));
 
     return Livewire::test(HelpDrawer::class, ['pageClass' => $pageClass, 'panelId' => 'admin', 'guard' => 'web']);
+}
+
+/** The Alpine persistence key Filament renders for one collapsible section id. */
+function finCodexDrawerPersistKey(string $id): string
+{
+    return 'section-${'.Js::from($id).' ?? $el.id}-isCollapsed';
 }
 
 it('lists the page\'s articles as Filament link actions with their excerpts, under a search field and tabs', function (): void {
@@ -64,15 +71,50 @@ it('shows the article with its table of contents, and a back button, once opened
         ->toContain("mountAction('close'");
 });
 
-it('follows the tab strip into the tree and renders nested articles beneath their parent', function (): void {
+it('follows the tab strip into the tree and nests an article\'s children inside its own section', function (): void {
     $drawer = finCodexSchemaDrawer()->call('open')->set('tab', 'tree');
     $html = $drawer->html();
 
+    $parent = strpos($html, 'data-codex-tree-node="users"');
+    $heading = strpos($html, 'id="fin-codex-drawer-users-heading"');
+    $content = strpos($html, 'id="fin-codex-drawer-users-content"');
+    $child = strpos($html, 'data-codex-tree-node="users/roles"');
+
+    // The indented wrapper this row used to read is gone. An article that has
+    // children is a section of its own now, headed by the action that shows it
+    // — so the label still opens the article and the chevron beside it folds
+    // the children away, which it could not do while the label was a bare link.
     expect($drawer->get('view'))->toBe('tree')
         ->and($drawer->get('tab'))->toBe('tree')
-        ->and($html)->toContain('data-codex-tree-node="users"')
-        ->toContain('data-codex-tree-node="users/roles"')
-        ->toContain('fin-codex-drawer__children');
+        ->and($heading)->toBeInt()
+        ->and($content)->toBeInt()
+        ->and(substr($html, $heading, $content - $heading))
+        ->toContain("mountAction('open-users')")
+        ->toContain('aria-controls="fin-codex-drawer-users-content"')
+        ->and($parent)->toBeLessThan($content)
+        ->and($content)->toBeLessThan($child);
+});
+
+it('gives every drawer tree section its own persisted id, under a prefix the page cannot collide with', function (): void {
+    // A folder group beside the article-rooted section. The groups carried no
+    // id at all, so Alpine fell back to an empty element id and every group in
+    // the drawer remembered its open state under one shared key.
+    Article::factory()->public()->published()
+        ->withTranslation('en', ['title' => 'Tools', 'body' => 'Tools body.'])
+        ->create(['slug' => 'library/tools']);
+
+    $html = finCodexSchemaDrawer()->call('open')->set('tab', 'tree')->html();
+
+    expect($html)->toContain(finCodexDrawerPersistKey('fin-codex-drawer-users'))
+        ->toContain(finCodexDrawerPersistKey('fin-codex-drawer-library'))
+        // The drawer is mounted on the Help Center page as well, so borrowing
+        // that page's ids would mean duplicate DOM ids, one persistence key
+        // shared between the two trees, and the page's arrival dispatcher
+        // opening the drawer's sections behind the overlay.
+        ->not->toContain('fin-codex-help-')
+        // The article the drawer is showing is the current page in its own
+        // tree too, the way it is in the page's rail.
+        ->toContain('aria-current="page"');
 });
 
 it('renders search hits while a query is typed and goes back when it is cleared', function (): void {
@@ -105,16 +147,31 @@ it('returns to the page tab and the article when the tab strip says so', functio
  * Actions group goes, not just the Action, so no empty wrapper is left; the
  * shortcut hint stays, which is the shape the core's own drawer view has.
  *
+ * The link carries the article the reader has open, so they keep their place
+ * on the way to the page, and falls back to the center's root only when the
+ * drawer has no article open. Two rows for the two states, because one state
+ * on its own cannot tell the difference.
+ *
  * The page class comes from the locked memo the core captures at mount, not
  * from the current route: a Livewire update request has no page, and a footer
  * that read the route would flip its own visibility between the first render
  * and the next update.
  */
-it('points the footer link at the panel\'s own Help Center page', function (): void {
+it('points the footer link at the help center root while no article is open', function (): void {
     $html = finCodexSchemaDrawer()->html();
 
     expect($html)->toContain('data-fin-codex-drawer-help-center')
         ->toContain('href="http://localhost/admin/help"');
+});
+
+it('points the footer link at the article the drawer has open', function (): void {
+    $html = finCodexSchemaDrawer()->call('open')->html();
+
+    // The closing quote is what makes the negative honest: the root href is a
+    // prefix of the article's, so only the full attribute can tell them apart.
+    expect($html)->toContain('data-fin-codex-drawer-help-center')
+        ->toContain('href="http://localhost/admin/help/users"')
+        ->not->toContain('href="http://localhost/admin/help"');
 });
 
 it('withholds the footer link on a simple-layout page and keeps the shortcut hint', function (): void {

@@ -31,6 +31,7 @@ use FinityLabs\FinCodex\FinCodexPlugin;
 use FinityLabs\LinCodex\Data\TreeNode;
 use FinityLabs\LinCodex\Livewire\HelpDrawer as CoreHelpDrawer;
 use FinityLabs\LinCodex\Reading\ReadArticle;
+use FinityLabs\LinCodex\Rendering\ArticlePath;
 use FinityLabs\LinCodex\Search\SearchHit;
 use FinityLabs\LinCodex\Search\SearchResult;
 use Illuminate\Contracts\View\View;
@@ -164,6 +165,12 @@ class HelpDrawer extends CoreHelpDrawer implements HasActions, HasSchemas
      * The shortcut hint, and "Open help center" whenever the viewer can
      * actually walk through that door.
      *
+     * The link carries the article the drawer has open, so a reader keeps
+     * their place on the way to the page, and falls back to the center's
+     * root only when there is no article to carry. It stays an absolute URL:
+     * the relative form matches the panel's own SPA exception pattern, which
+     * would quietly turn the footer into a full page load (PLACE-02).
+     *
      * Three reasons to withhold it, and the whole Actions group goes rather
      * than the Action alone, so no empty wrapper is left behind. The URL is
      * null when no help-center prefix could be computed — a tenanted panel
@@ -185,6 +192,7 @@ class HelpDrawer extends CoreHelpDrawer implements HasActions, HasSchemas
     {
         $shortcut = $this->data()['options']['shortcut'] ?? null;
         $url = $this->data()['helpCenterUrl'];
+        $href = blank($this->slug) ? $url : url(ArticlePath::href($this->slug));
         $pageClass = $this->page['class'] ?? null;
         $isSimple = is_string($pageClass) && is_subclass_of($pageClass, SimplePage::class);
         $mayRead = FinCodexPlugin::helpCenterPageClass($this->page['panel'] ?? null)::canAccess();
@@ -199,7 +207,7 @@ class HelpDrawer extends CoreHelpDrawer implements HasActions, HasSchemas
                         ->icon(Heroicon::OutlinedArrowTopRightOnSquare)
                         ->iconPosition(IconPosition::After)
                         ->extraAttributes(['data-fin-codex-drawer-help-center' => 'true'])
-                        ->url((string) $url),
+                        ->url((string) $href),
                 ])->grow(false)->hidden($url === null || $isSimple || ! $mayRead),
                 Text::make($shortcut === null ? '' : (string) __('lin-codex::lin-codex.ui.shortcut_hint', ['shortcut' => $shortcut]))
                     ->size(TextSize::ExtraSmall)
@@ -372,9 +380,17 @@ class HelpDrawer extends CoreHelpDrawer implements HasActions, HasSchemas
     }
 
     /**
-     * The tree: a collapsible Section per group, a link action per article
-     * with its own children nested beneath it, the current article in the
-     * primary colour.
+     * The tree: a node with children is a collapsible Section whether it is a
+     * folder group or an article, and an article-rooted one keeps its own link
+     * action as the heading — the label shows the article, the chevron beside
+     * it works the children. A node with no children is the link alone.
+     *
+     * The article being shown is primary where the rest are gray, and it alone
+     * says it is the current page. The same shape as the Help Center page's
+     * rail, deliberately: the two trees are one component on two surfaces.
+     *
+     * The root article appears once. The heading link is the only way into it,
+     * so nothing repeats it among its children.
      *
      * @param  list<TreeNode>  $nodes
      *
@@ -387,30 +403,72 @@ class HelpDrawer extends CoreHelpDrawer implements HasActions, HasSchemas
         foreach ($nodes as $node) {
             if ($node->isGroup()) {
                 $components[] = Section::make($node->label)
+                    ->id($this->sectionId($node->slug))
                     ->compact()
                     ->collapsible()
+                    ->persistCollapsed()
                     ->extraAttributes(['data-codex-tree-node' => $node->slug])
                     ->schema($this->treeComponents($node->children, $current));
 
                 continue;
             }
 
-            $link = Actions::make([
-                $this->openAction($node->slug, $node->label)
-                    ->color($node->slug === $current ? 'primary' : 'gray')
-                    ->extraAttributes(['data-codex-tree-node' => $node->slug]),
-            ]);
+            $link = $this->openAction($node->slug, $node->label)
+                ->color($node->slug === $current ? 'primary' : 'gray')
+                ->extraAttributes(['data-codex-tree-node' => $node->slug]);
 
-            $components[] = $node->children === []
-                ? $link
-                : Group::make([
-                    $link,
-                    Group::make($this->treeComponents($node->children, $current))
-                        ->extraAttributes(['class' => 'fin-codex-drawer__children']),
-                ]);
+            if ($node->slug === $current) {
+                $link = $link->extraAttributes(['aria-current' => 'page'], merge: true);
+            }
+
+            if ($node->children === []) {
+                $components[] = Actions::make([$link]);
+
+                continue;
+            }
+
+            // A Filament Action is Htmlable, so the whole link renders inside
+            // the section's heading. The guard keeps a click on the label from
+            // flipping the section as well as showing the article: Filament's
+            // toggle listens on the element around the heading. An empty
+            // string, never true — a true value renders as its own attribute
+            // name, which Alpine would evaluate.
+            $link = $link->extraAttributes(['x-on:click.stop' => ''], merge: true);
+
+            $components[] = Section::make($link)
+                // Not optional. Filament's own key closure would put the heading
+                // through a string-typed helper, and an Action cannot be cast
+                // to one; setting the key replaces the closure so it never runs.
+                ->key($this->sectionId($node->slug).'::section')
+                ->id($this->sectionId($node->slug))
+                ->compact()
+                ->collapsible()
+                ->persistCollapsed()
+                ->extraAttributes(['data-codex-tree-node' => $node->slug])
+                ->schema($this->treeComponents($node->children, $current));
         }
 
         return $components;
+    }
+
+    /**
+     * The DOM id of one tree section — and the key its open state is remembered
+     * under, and what an expand-section event has to name to reach it, because
+     * Section::id() feeds all three.
+     *
+     * The prefix is the drawer's own and must stay that way. This drawer is
+     * mounted on every panel page, the Help Center included, so a shared prefix
+     * would put two elements with one id on that page, have the two trees
+     * remember a single open state between them, and let the page's arrival
+     * dispatcher unfold the drawer's sections behind the overlay.
+     *
+     * Derived from the node slug and nothing else, so it survives the re-render
+     * every tab switch causes, and put through Str::slug() because Filament
+     * strips a handful of characters out of a custom id.
+     */
+    private function sectionId(string $slug): string
+    {
+        return 'fin-codex-drawer-'.Str::slug(str_replace('/', '-', $slug));
     }
 
     /**
