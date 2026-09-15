@@ -47,7 +47,7 @@ use FinityLabs\LinCodex\Models\ArticleContext;
  * rules and two placeholders on one state path. dehydrate() merges them back
  * into the single `key` the core stores.
  *
- * Contexts a class declares in code (Phase 4's DeclaredContexts, folded into
+ * Contexts a class declares in code (DeclaredContexts, folded into
  * the read model by the ContentSource decorator) are listed above the
  * repeater and nowhere else: they are not rows in codex_article_contexts,
  * they cannot be edited from here, and putting them into the form state
@@ -344,7 +344,7 @@ final class ContextsRepeater
      * The row says "any panel" while its key belongs to exactly one: an
      * inline nudge, live and non-blocking, never an error.
      *
-     * This is the mistake the UAT actually made — an admin-only route filed
+     * This is the mistake an editor actually makes — an admin-only route filed
      * under any panel with nothing objecting. It stays a warning because
      * binding one panel's screen to every panel is unusual rather than wrong,
      * and this package's own starter content does it deliberately. Being live

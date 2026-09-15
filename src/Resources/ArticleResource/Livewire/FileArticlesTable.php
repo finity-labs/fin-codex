@@ -7,7 +7,6 @@ namespace FinityLabs\FinCodex\Resources\ArticleResource\Livewire;
 use Filament\Actions\Action;
 use Filament\Actions\Concerns\InteractsWithActions;
 use Filament\Actions\Contracts\HasActions;
-use Filament\Notifications\Notification;
 use Filament\Schemas\Concerns\InteractsWithSchemas;
 use Filament\Schemas\Contracts\HasSchemas;
 use Filament\Support\Icons\Heroicon;
@@ -16,17 +15,13 @@ use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
 use FinityLabs\FinCodex\Auth\ArticleAbility;
-use FinityLabs\FinCodex\Editor\FileArticleAdopter;
-use FinityLabs\FinCodex\FinCodexPlugin;
-use FinityLabs\FinCodex\Resources\ArticleResource;
+use FinityLabs\FinCodex\Editor\Concerns\ImportsFileArticle;
 use FinityLabs\FinCodex\Resources\ArticleResource\Schemas\TranslationTabs;
-use FinityLabs\FinSupport\Panel\Concerns\ResolvesPanelUser;
 use FinityLabs\LinCodex\Contracts\ContentSource;
 use FinityLabs\LinCodex\Data\ArticleData;
 use FinityLabs\LinCodex\Sources\FilesystemSource;
 use FinityLabs\LinCodex\Sources\SlugPath;
 use Livewire\Component;
-use RuntimeException;
 
 /**
  * The "From files" tab: every article the content source knows from a
@@ -56,10 +51,10 @@ use RuntimeException;
  */
 final class FileArticlesTable extends Component implements HasActions, HasSchemas, HasTable
 {
+    use ImportsFileArticle;
     use InteractsWithActions;
     use InteractsWithSchemas;
     use InteractsWithTable;
-    use ResolvesPanelUser;
 
     public function table(Table $table): Table
     {
@@ -91,7 +86,7 @@ final class FileArticlesTable extends Component implements HasActions, HasSchema
                     ->authorize(static fn (): bool => ArticleAbility::allows('import'))
                     ->label(__('fin-codex::fin-codex.editor.files.import'))
                     ->icon(Heroicon::OutlinedArrowDownTray)
-                    ->action(fn (array $record) => $this->import((string) $record['slug'])),
+                    ->action(fn (array $record) => $this->importFileArticle((string) $record['slug'])),
             ])
             ->emptyStateHeading(__('fin-codex::fin-codex.editor.files.empty'))
             ->emptyStateIcon(Heroicon::OutlinedDocumentText);
@@ -100,36 +95,6 @@ final class FileArticlesTable extends Component implements HasActions, HasSchema
     public function render(): string
     {
         return '<div>{{ $this->table }}</div>';
-    }
-
-    /**
-     * Import one file article with the panel user and open it. The
-     * notification is persistent and sent before the redirect, because
-     * `Notification::send()` pushes it into the session, where the edit page
-     * picks it up on the next request.
-     */
-    private function import(string $slug): void
-    {
-        try {
-            $article = app(FileArticleAdopter::class)->adopt($slug, $this->userId());
-        } catch (RuntimeException $e) {
-            Notification::make()
-                ->danger()
-                ->title(__('fin-codex::fin-codex.editor.imported.failed'))
-                ->body($e->getMessage())
-                ->send();
-
-            return;
-        }
-
-        Notification::make()
-            ->warning()
-            ->persistent()
-            ->title(__('fin-codex::fin-codex.editor.imported.title'))
-            ->body(__('fin-codex::fin-codex.editor.imported.body', ['path' => (string) $article->source_path]))
-            ->send();
-
-        $this->redirect($this->articleResource()::getUrl('edit', ['record' => $article]));
     }
 
     /**
@@ -210,22 +175,5 @@ final class FileArticlesTable extends Component implements HasActions, HasSchema
         }
 
         return $best === null ? $normalised : substr($normalised, strlen($best));
-    }
-
-    /**
-     * The resource the current panel registered, so a host's
-     * `articleResource()` override builds the edit URL.
-     *
-     * @return class-string<ArticleResource>
-     */
-    private function articleResource(): string
-    {
-        return FinCodexPlugin::articleResourceClass();
-    }
-
-    /** The panel user's id, or null for a panel without an authenticated user. */
-    private function userId(): int|string|null
-    {
-        return $this->panelUserId();
     }
 }

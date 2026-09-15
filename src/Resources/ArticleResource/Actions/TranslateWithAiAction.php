@@ -37,8 +37,8 @@ use FinityLabs\LinCodex\Translation\ArticleTranslator;
  *   standard methods still answers. authorize() takes a Closure and must keep
  *   taking one: Filament unshifts the action's own record as the gate subject,
  *   so the string form is gated against whatever record the action happens to
- *   carry - Phase 8's finding, and the reason no gate in this package is ever
- *   handed a plain ability name. The ?Article is nullable because the create
+ *   carry, which is the reason no gate in this package is ever handed a
+ *   plain ability name. The ?Article is nullable because the create
  *   page has no record yet.
  * - a source worth translating. While the default tab's live title or body is
  *   blank the button is there but disabled, with a tooltip naming the language

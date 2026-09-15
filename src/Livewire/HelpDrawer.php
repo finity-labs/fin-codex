@@ -28,15 +28,13 @@ use Filament\Support\Enums\IconPosition;
 use Filament\Support\Enums\TextSize;
 use Filament\Support\Icons\Heroicon;
 use FinityLabs\FinCodex\FinCodexPlugin;
-use FinityLabs\LinCodex\Data\TreeNode;
+use FinityLabs\FinCodex\Livewire\Concerns\RendersHelpSchemas;
 use FinityLabs\LinCodex\Livewire\HelpDrawer as CoreHelpDrawer;
 use FinityLabs\LinCodex\Reading\ReadArticle;
 use FinityLabs\LinCodex\Rendering\ArticlePath;
-use FinityLabs\LinCodex\Search\SearchHit;
 use FinityLabs\LinCodex\Search\SearchResult;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\HtmlString;
-use Illuminate\Support\Str;
 
 /**
  * The core drawer, presented with Filament's schema components.
@@ -69,6 +67,7 @@ class HelpDrawer extends CoreHelpDrawer implements HasActions, HasSchemas
 {
     use InteractsWithActions;
     use InteractsWithSchemas;
+    use RendersHelpSchemas;
 
     public string $tab = 'page';
 
@@ -156,7 +155,7 @@ class HelpDrawer extends CoreHelpDrawer implements HasActions, HasSchemas
                         ->schema($this->pageComponents($data)),
                     'tree' => Tab::make(__('lin-codex::lin-codex.ui.browse'))
                         ->extraAttributes(['data-fin-codex-drawer-tab' => 'tree'])
-                        ->schema($this->treeComponents($data['nodes'], $this->slug)),
+                        ->schema($this->helpTreeComponents($data['nodes'], $this->slug)),
                 ]),
         ]);
     }
@@ -169,7 +168,7 @@ class HelpDrawer extends CoreHelpDrawer implements HasActions, HasSchemas
      * their place on the way to the page, and falls back to the center's
      * root only when there is no article to carry. It stays an absolute URL:
      * the relative form matches the panel's own SPA exception pattern, which
-     * would quietly turn the footer into a full page load (PLACE-02).
+     * would quietly turn the footer into a full page load.
      *
      * Three reasons to withhold it, and the whole Actions group goes rather
      * than the Action alone, so no empty wrapper is left behind. The URL is
@@ -177,7 +176,7 @@ class HelpDrawer extends CoreHelpDrawer implements HasActions, HasSchemas
      * before its tenant is known — and an action with a null URL still
      * renders an anchor, with an empty href. A simple-layout page is a guest
      * page, and the Help Center now lives inside the panel, behind the very
-     * login the guest is looking at (PLACE-03). And a viewer the page's own
+     * login the guest is looking at. And a viewer the page's own
      * gate refuses is never offered the link, only to meet a 403 behind it.
      *
      * The page class comes from $this->page, the locked memo the core
@@ -247,7 +246,7 @@ class HelpDrawer extends CoreHelpDrawer implements HasActions, HasSchemas
     private function pageComponents(array $data): array
     {
         if ($this->view === 'search') {
-            return $data['result'] instanceof SearchResult ? $this->searchComponents($data['result']) : [];
+            return $data['result'] instanceof SearchResult ? $this->helpSearchComponents($data['result']) : [];
         }
 
         if ($this->view === 'article') {
@@ -257,7 +256,7 @@ class HelpDrawer extends CoreHelpDrawer implements HasActions, HasSchemas
         if ($this->pageArticles === []) {
             return [
                 Text::make(__('lin-codex::lin-codex.ui.no_help_for_page'))->color('gray'),
-                ...$this->treeComponents($data['nodes'], null),
+                ...$this->helpTreeComponents($data['nodes'], null),
             ];
         }
 
@@ -275,7 +274,7 @@ class HelpDrawer extends CoreHelpDrawer implements HasActions, HasSchemas
     {
         return array_map(fn (array $entry): Group => Group::make([
             Actions::make([
-                $this->openAction($entry['slug'], $entry['title'])
+                $this->helpLink($entry['slug'], $entry['title'])
                     ->extraAttributes(['data-codex-page-article' => $entry['slug']]),
             ]),
             Text::make((string) $entry['excerpt'])
@@ -306,10 +305,7 @@ class HelpDrawer extends CoreHelpDrawer implements HasActions, HasSchemas
         $components = [];
 
         if ($read->breadcrumbs !== []) {
-            $components[] = Actions::make(array_map(
-                fn (array $crumb): Action => $this->openAction($crumb['slug'], $crumb['title'])->size('sm')->color('gray'),
-                $read->breadcrumbs,
-            ));
+            $components[] = $this->helpBreadcrumbs($read->breadcrumbs);
         }
 
         /** @var list<array{slug: string, title: string, excerpt: ?string, isFallback: bool}> $also */
@@ -319,7 +315,7 @@ class HelpDrawer extends CoreHelpDrawer implements HasActions, HasSchemas
             $components[] = Section::make(__('lin-codex::lin-codex.ui.also_on_this_page'))
                 ->compact()
                 ->schema([Actions::make(array_map(
-                    fn (array $entry): Action => $this->openAction($entry['slug'], $entry['title'])->extraAttributes(['data-codex-page-article' => $entry['slug']]),
+                    fn (array $entry): Action => $this->helpLink($entry['slug'], $entry['title'])->extraAttributes(['data-codex-page-article' => $entry['slug']]),
                     $also,
                 ))]);
         }
@@ -333,142 +329,16 @@ class HelpDrawer extends CoreHelpDrawer implements HasActions, HasSchemas
                 ->compact()
                 ->collapsible()
                 ->collapsed(count($read->rendered->toc) < 3)
-                ->schema([UnorderedList::make(array_map(
-                    static fn (array $entry): Text => Text::make(new HtmlString('<a href="#'.e($entry['id']).'">'.e($entry['text']).'</a>'))->size(TextSize::Small),
-                    $read->rendered->toc,
-                ))]);
+                ->schema([UnorderedList::make($this->helpHeadingEntries($read->rendered->toc))]);
         }
 
         $components[] = Html::make(new HtmlString('<div class="codex-article__body" lang="'.e($read->locale).'">'.$read->rendered->html.'</div>'));
 
         if ($read->related !== []) {
-            $components[] = Section::make(__('lin-codex::lin-codex.ui.related'))
-                ->compact()
-                ->schema([Actions::make(array_map(
-                    fn (array $entry): Action => $this->openAction($entry['slug'], $entry['title']),
-                    $read->related,
-                ))]);
+            $components[] = $this->helpRelatedSection($read->related);
         }
 
         return $components;
-    }
-
-    /**
-     * @return list<Component>
-     */
-    private function searchComponents(SearchResult $result): array
-    {
-        if ($result->rateLimited) {
-            return [Text::make(__('lin-codex::lin-codex.ui.rate_limited', ['seconds' => $result->retryAfterSeconds]))->color('warning')];
-        }
-
-        if ($result->hits === []) {
-            return [Text::make(__('lin-codex::lin-codex.ui.no_results'))->color('gray')];
-        }
-
-        return array_map(fn (SearchHit $hit): Group => Group::make([
-            Actions::make([
-                $this->openAction($hit->slug, $hit->title)->extraAttributes(['data-codex-hit' => $hit->slug]),
-            ]),
-            Text::make(implode(' › ', $hit->sectionPath))
-                ->size(TextSize::ExtraSmall)
-                ->color('gray')
-                ->hidden($hit->sectionPath === []),
-            // The snippet is SnippetBuilder's: everything escaped, <mark> only.
-            Text::make(new HtmlString($hit->snippet))->size(TextSize::Small),
-        ]), $result->hits);
-    }
-
-    /**
-     * The tree: a node with children is a collapsible Section whether it is a
-     * folder group or an article, and an article-rooted one keeps its own link
-     * action as the heading — the label shows the article, the chevron beside
-     * it works the children. A node with no children is the link alone.
-     *
-     * The article being shown is primary where the rest are gray, and it alone
-     * says it is the current page. The same shape as the Help Center page's
-     * rail, deliberately: the two trees are one component on two surfaces.
-     *
-     * The root article appears once. The heading link is the only way into it,
-     * so nothing repeats it among its children.
-     *
-     * @param  list<TreeNode>  $nodes
-     *
-     * @return list<Component>
-     */
-    private function treeComponents(array $nodes, ?string $current): array
-    {
-        $components = [];
-
-        foreach ($nodes as $node) {
-            if ($node->isGroup()) {
-                $components[] = Section::make($node->label)
-                    ->id($this->sectionId($node->slug))
-                    ->compact()
-                    ->collapsible()
-                    ->persistCollapsed()
-                    ->extraAttributes(['data-codex-tree-node' => $node->slug])
-                    ->schema($this->treeComponents($node->children, $current));
-
-                continue;
-            }
-
-            $link = $this->openAction($node->slug, $node->label)
-                ->color($node->slug === $current ? 'primary' : 'gray')
-                ->extraAttributes(['data-codex-tree-node' => $node->slug]);
-
-            if ($node->slug === $current) {
-                $link = $link->extraAttributes(['aria-current' => 'page'], merge: true);
-            }
-
-            if ($node->children === []) {
-                $components[] = Actions::make([$link]);
-
-                continue;
-            }
-
-            // A Filament Action is Htmlable, so the whole link renders inside
-            // the section's heading. The guard keeps a click on the label from
-            // flipping the section as well as showing the article: Filament's
-            // toggle listens on the element around the heading. An empty
-            // string, never true — a true value renders as its own attribute
-            // name, which Alpine would evaluate.
-            $link = $link->extraAttributes(['x-on:click.stop' => ''], merge: true);
-
-            $components[] = Section::make($link)
-                // Not optional. Filament's own key closure would put the heading
-                // through a string-typed helper, and an Action cannot be cast
-                // to one; setting the key replaces the closure so it never runs.
-                ->key($this->sectionId($node->slug).'::section')
-                ->id($this->sectionId($node->slug))
-                ->compact()
-                ->collapsible()
-                ->persistCollapsed()
-                ->extraAttributes(['data-codex-tree-node' => $node->slug])
-                ->schema($this->treeComponents($node->children, $current));
-        }
-
-        return $components;
-    }
-
-    /**
-     * The DOM id of one tree section — and the key its open state is remembered
-     * under, and what an expand-section event has to name to reach it, because
-     * Section::id() feeds all three.
-     *
-     * The prefix is the drawer's own and must stay that way. This drawer is
-     * mounted on every panel page, the Help Center included, so a shared prefix
-     * would put two elements with one id on that page, have the two trees
-     * remember a single open state between them, and let the page's arrival
-     * dispatcher unfold the drawer's sections behind the overlay.
-     *
-     * Derived from the node slug and nothing else, so it survives the re-render
-     * every tab switch causes, and put through Str::slug() because Filament
-     * strips a handful of characters out of a custom id.
-     */
-    private function sectionId(string $slug): string
-    {
-        return 'fin-codex-drawer-'.Str::slug(str_replace('/', '-', $slug));
     }
 
     /**
@@ -476,11 +346,33 @@ class HelpDrawer extends CoreHelpDrawer implements HasActions, HasSchemas
      * two links to one article in one schema share a name and Filament keeps
      * them apart by their schema component.
      */
-    private function openAction(string $slug, string $label): Action
+    protected function helpLink(string $slug, string $label): Action
     {
-        return Action::make('open-'.Str::slug(str_replace('/', '-', $slug)))
+        return Action::make($this->helpActionName($slug))
             ->link()
             ->label($label)
             ->action(fn () => $this->show($slug));
+    }
+
+    /**
+     * The drawer's own prefix, which must stay distinct from the Help Center
+     * page's: this drawer is mounted on every panel page, that page included,
+     * so a shared prefix would put two elements with one id on it, have the
+     * two trees remember a single open state between them, and let the
+     * page's arrival dispatcher unfold the drawer's sections behind the overlay.
+     */
+    protected function helpSectionIdPrefix(): string
+    {
+        return 'fin-codex-drawer-';
+    }
+
+    protected function helpNodeAttribute(): string
+    {
+        return 'data-codex-tree-node';
+    }
+
+    protected function helpHitAttribute(): string
+    {
+        return 'data-codex-hit';
     }
 }

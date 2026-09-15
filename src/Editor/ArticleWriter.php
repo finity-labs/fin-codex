@@ -215,7 +215,7 @@ final class ArticleWriter
      * section is a slug prefix, not an owner, so no descendant is deleted
      * with it and no slug is rewritten.
      *
-     * $keepChildrenHidden is the EDIT-10 reconciliation. Deleting an
+     * $keepChildrenHidden is the delete action's reconciliation. Deleting an
      * authenticated article would otherwise hand its published, public
      * descendants to guests, because the folder group the slug leaves
      * behind hides nothing; with the flag on, the descendants

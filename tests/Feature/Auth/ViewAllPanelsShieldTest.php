@@ -11,7 +11,6 @@ use FinityLabs\FinCodex\Tests\Fixtures\Shield\ShieldStub;
 use FinityLabs\FinCodex\Tests\Fixtures\User;
 use FinityLabs\LinCodex\Auth\ArticleGate;
 use FinityLabs\LinCodex\Auth\Viewer;
-use FinityLabs\LinCodex\Contracts\ContentSource;
 use FinityLabs\LinCodex\Enums\ContextType;
 use FinityLabs\LinCodex\Models\Article;
 use Illuminate\Support\Facades\Gate;
@@ -161,11 +160,7 @@ function finCodexViewAllPanelsSeed(): void
  */
 function finCodexViewAllPanelsSeen(User $user): array
 {
-    $seen = array_keys(app(ArticleGate::class)->filter(app(ContentSource::class)->all(), Viewer::authenticated($user, 'web')));
-
-    sort($seen);
-
-    return $seen;
+    return finCodexSeenSlugs(Viewer::authenticated($user, 'web'));
 }
 
 it('lifts the panel scope for a viewer holding the shield permission', function (): void {

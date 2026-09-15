@@ -8,9 +8,7 @@ use FinityLabs\FinCodex\Pages\HelpCenter;
 use FinityLabs\FinCodex\Scope\ContextPanels;
 use FinityLabs\FinCodex\Tests\Fixtures\Policies\ViewAllPanelsArticlePolicy;
 use FinityLabs\FinCodex\Tests\Fixtures\User;
-use FinityLabs\LinCodex\Auth\ArticleGate;
 use FinityLabs\LinCodex\Auth\Viewer;
-use FinityLabs\LinCodex\Contracts\ContentSource;
 use FinityLabs\LinCodex\Enums\ContextType;
 use FinityLabs\LinCodex\Models\Article;
 use Illuminate\Support\Facades\Gate;
@@ -37,10 +35,11 @@ use Livewire\Livewire;
  *    helper drops the PanelScopeGate singleton, and a fresh gate has no preview
  *    to leak, so the row would pass over a preview() that never restored.
  *
- * Helpers are file-local and finCodexHelpFilter*-prefixed. Pest "global" helpers
- * only exist for the files a run loads, so a single-file run of this file cannot
- * see the finCodexHelpCenter*, finCodexHelpColumn*, finCodexHelpTree* or
- * finCodexHelpSearch* functions of its siblings.
+ * Helpers are file-local and finCodexHelpFilter*-prefixed. A sibling test
+ * file's functions only exist when that file is loaded, so a single-file run
+ * cannot see the finCodexHelpCenter*, finCodexHelpColumn*, finCodexHelpTree*
+ * or finCodexHelpSearch* functions; what the scope tests share
+ * (finCodexSeenSlugs) lives in tests/Pest.php, which every run loads.
  */
 
 /**
@@ -50,7 +49,7 @@ use Livewire\Livewire;
  */
 function finCodexHelpFilterUser(string $email = 'filter@example.com'): User
 {
-    return User::firstOrCreate(['email' => $email], ['name' => 'Support']);
+    return finCodexUser($email, 'Support');
 }
 
 /** One published, public article, optionally carrying one stored context. */
@@ -145,22 +144,6 @@ function finCodexHelpFilterRailHtml(string $html): string
     return $end === false ? substr($html, $start) : substr($html, $start, $end - $start);
 }
 
-/**
- * The slugs the core admits for one viewer, sorted: the source's map through
- * ArticleGate::filter(), which is every read path's shared answer and therefore
- * what a leaked preview would show up in.
- *
- * @return list<string>
- */
-function finCodexHelpFilterSeen(Viewer $viewer): array
-{
-    $seen = array_keys(app(ArticleGate::class)->filter(app(ContentSource::class)->all(), $viewer));
-
-    sort($seen);
-
-    return $seen;
-}
-
 /** The middle column of a rendered page, between its own class and the headings column's. */
 function finCodexHelpFilterArticleHtml(string $html): string
 {
@@ -190,6 +173,20 @@ it('shows no filter at all to a viewer the host policy grants nothing', function
     // page. A reader who cannot cross panels is never told the option exists.
     expect($html)->not->toContain('data-fin-codex-help-panel-filter')
         ->and($html)->not->toContain((string) __('fin-codex::fin-codex.help_center.all_panels'));
+});
+
+it('answers by the normal rule to a viewer without the grant who sets the filter by hand', function (): void {
+    finCodexHelpFilterSeed();
+
+    // No select rendered, but the property is public: this is $wire.set from
+    // the browser console. Tree and hits must stay the admin panel's own.
+    $page = finCodexHelpFilterPage(granted: false)->set('panelFilter', 'staff')->set('query', 'documents');
+    $rail = finCodexHelpFilterRailHtml($page->html());
+
+    expect($rail)->toContain('data-fin-codex-help-node="admin-guide"')
+        ->toContain('data-fin-codex-help-hit="admin-guide"')
+        ->not->toContain('data-fin-codex-help-node="staff-guide"')
+        ->not->toContain('data-fin-codex-help-hit="staff-guide"');
 });
 
 it('shows the filter above the search field and the tab strip to a viewer granted viewAllPanels', function (): void {
@@ -233,7 +230,7 @@ it('offers the coverage report\'s own panel list with all panels last', function
         ->and(HelpCenter::ALL_PANELS)->not->toBe(ContextPanels::OUTSIDE_PANELS);
 });
 
-it('keeps the placeholder off and re-renders on a choice without a submit', function (): void {
+it('is a live select with no placeholder to pick', function (): void {
     finCodexHelpFilterSeed();
 
     $select = finCodexHelpFilterSelect(finCodexHelpFilterPage());
@@ -250,7 +247,7 @@ it('keeps the placeholder off and re-renders on a choice without a submit', func
  * -----------------------------------------------------------------------
  */
 
-it('arrives on the current panel, on the admin panel and on the staff panel alike', function (): void {
+it('arrives on the current panel', function (): void {
     finCodexHelpFilterSeed();
 
     finCodexHelpFilterPage()->assertSet('panelFilter', 'admin');
@@ -377,6 +374,6 @@ it('leaves the gate answering by the normal rule once the page has rendered', fu
     // The viewer holds the grant, so the normal rule is "everything". A leaked
     // staff preview would take admin-guide away and add staff-guide, which is
     // what the next drawer, hint or global search in this process would get.
-    expect(finCodexHelpFilterSeen(Viewer::authenticated($user, 'web')))
+    expect(finCodexSeenSlugs(Viewer::authenticated($user, 'web')))
         ->toBe(['admin-guide', 'intro', 'shop-guide', 'staff-guide']);
 });

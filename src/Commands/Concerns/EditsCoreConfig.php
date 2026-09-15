@@ -29,15 +29,22 @@ trait EditsCoreConfig
      *
      * The closing quote in the pattern is load-bearing. The same array carries
      * a longer key two lines below that begins with the same word, and matching
-     * the quote is what keeps this edit off it. The tail stops at the value, so
-     * the trailing comma and every surrounding comment survive.
+     * the quote is what keeps this edit off it.
      *
-     * The match count is the guard: none means a host reshaped the file, more
-     * than one means something unexpected, and both decline rather than guess.
+     * Only a value this trait can read is rewritten: null, or one quoted
+     * string, followed by the comma that ends the entry. Anything else — an
+     * env() call, a constant, an expression — is declined rather than cut at
+     * its first comma, which used to leave `null '/help'),` behind and take the
+     * whole application down with a parse error. The trailing comma and every
+     * surrounding comment survive.
+     *
+     * The match count is the guard: none means a host reshaped the file or
+     * wrote a value of their own, more than one means something unexpected,
+     * and both decline rather than guess.
      *
      * @param  string|null  $prefix  null switches the public page off; a string switches it back on
      *
-     * @return bool false when the file could not be read or written, or did not carry the key exactly once
+     * @return bool false when the file could not be read or written, or did not carry a recognisable value exactly once
      */
     protected function setCoreRoutePrefix(string $path, ?string $prefix): bool
     {
@@ -50,7 +57,7 @@ trait EditsCoreConfig
         $value = $prefix === null ? 'null' : "'".addslashes($prefix)."'";
 
         $updated = preg_replace(
-            "/(['\"]help_center['\"]\s*=>\s*)[^,\n]+/",
+            "/(['\"]help_center['\"]\s*=>\s*)(?:null|'(?:[^'\\\\]|\\\\.)*'|\"(?:[^\"\\\\]|\\\\.)*\")(?=\s*,)/",
             '${1}'.$value,
             $content,
             1,

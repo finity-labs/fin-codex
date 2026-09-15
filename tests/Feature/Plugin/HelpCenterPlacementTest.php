@@ -20,10 +20,10 @@ use Illuminate\Support\Facades\Gate;
  * bookmark all still reach it; the placement moves the two MENU ENTRIES and
  * nothing else.
  *
- * Helpers are file-local and finCodexPlacement*-prefixed. Pest "global"
- * helpers are only loaded for the files a run actually loads, so a
- * single-file run cannot see a sibling test file's functions (the convention
- * tests/Feature/HelpCenter/HelpCenterPageTest.php states for the same reason).
+ * Helpers are file-local and finCodexPlacement*-prefixed. A sibling test
+ * file's functions only exist when that file is loaded, so a single-file run
+ * cannot see them; anything two files need lives in tests/Pest.php, which
+ * every run loads.
  */
 
 /** @return array<string, mixed> The five placement options as the plugin reports them. */
@@ -324,7 +324,7 @@ it('leaves the page registered and answering under None', function (): void {
     $this->get(route('filament.portal.pages.help'))->assertOk();
 });
 
-it('sorts the entry directly after Profile on a panel with no profile page', function (): void {
+it('sorts the entry after Profile, so the menu keeps the viewer\'s name as its header', function (): void {
     // Correction 3's regression guard. At sort -2 our entry becomes the FIRST
     // item of the block Filament groups on a negative sort, and because it
     // carries a URL the dropdown stops treating the viewer's name as its

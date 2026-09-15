@@ -146,7 +146,7 @@ final class HelpSearchProvider implements GlobalSearchProvider
     }
 
     /**
-     * GS-02's "open here". The row itself navigates to the help center, like
+     * "Open here". The row itself navigates to the help center, like
      * every other global search result; this action opens the drawer in place
      * instead. It is attached unconditionally: the search field renders in the
      * topbar or the sidebar, neither of which exists on a SimplePage, so a

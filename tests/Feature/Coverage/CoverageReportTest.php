@@ -437,17 +437,21 @@ it('counts the rows that belong to no panel for a null panel', function (): void
         ->and($report->uncovered(null))->toBeGreaterThan(0);
 });
 
-it('reads the source once per request and drops the memo with the other help memos', function (): void {
+it('reads the source once per request and re-reads after a write in the same request', function (): void {
     $report = app(CoverageReport::class);
     $first = $report->rows();
 
     expect(app(CoverageReport::class))->toBe($report)
-        ->and($report->rows())->toBe($first);
+        ->and($report->rows())->toBe($first)
+        ->and(finCodexCoverageRowsFor('admin', UserResource::class)[0]->covered())->toBeFalse();
 
+    // A write through the models drops the memo: the same instance, in the
+    // same request, answers with the row covered — which is what the coverage
+    // page's own attach action relies on to flip its row in place.
     finCodexCoverageArticle('users-guide', ContextType::PageClass, UserResource::class, 'admin');
 
-    expect($report->rows())->toBe($first)
-        ->and(finCodexCoverageRowsFor('admin', UserResource::class)[0]->covered())->toBeFalse();
+    expect($report->rows())->not->toBe($first)
+        ->and(finCodexCoverageRowsFor('admin', UserResource::class)[0]->covered())->toBeTrue();
 
     forgetHelpMemo();
 

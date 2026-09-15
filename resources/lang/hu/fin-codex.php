@@ -5,7 +5,6 @@ declare(strict_types=1);
 return [
     'navigation' => [
         'group' => 'Súgó',
-        'help' => 'Súgó',
     ],
     'button' => [
         'tooltip' => 'Súgó',
@@ -332,7 +331,6 @@ return [
     'coverage' => [
         'navigation' => 'Lefedettség',
         'title' => 'Súgó lefedettsége',
-        'description' => 'Az alkalmazás mely képernyőihez tartozik súgócikk.',
         'badge_tooltip' => 'Súgócikk nélküli képernyők',
         'columns' => [
             'page' => 'Oldal',
@@ -356,7 +354,6 @@ return [
         'actions' => [
             'write' => 'Cikk írása',
             'attach' => 'Hozzácsatolás cikkhez',
-            'edit' => 'Cikk szerkesztése',
             'import' => 'Importálás és szerkesztés',
         ],
         'attach' => [

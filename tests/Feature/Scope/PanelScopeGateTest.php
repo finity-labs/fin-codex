@@ -65,21 +65,6 @@ function finCodexScopeUser(string $email = 'scope@example.com'): User
     return User::create(['name' => 'Scope', 'email' => $email]);
 }
 
-/**
- * The slugs the core admits for one viewer, sorted: the source's map through
- * ArticleGate::filter(), which is every read path's shared answer.
- *
- * @return list<string>
- */
-function finCodexSeen(Viewer $viewer): array
-{
-    $seen = array_keys(app(ArticleGate::class)->filter(app(ContentSource::class)->all(), $viewer));
-
-    sort($seen);
-
-    return $seen;
-}
-
 /** One published, public article, optionally carrying one stored context. */
 function finCodexScopeArticle(string $slug, ?ContextType $type = null, string $key = '', ?string $panelId = null): Article
 {
@@ -132,7 +117,7 @@ it('changes nothing when no panel is current, even with the hook installed', fun
     finCodexInstallScope();
     $user = finCodexScopeUser();
 
-    expect(finCodexSeen(Viewer::authenticated($user, 'web')))
+    expect(finCodexSeenSlugs(Viewer::authenticated($user, 'web')))
         ->toBe(['admin-guide', 'intro', 'plain-page', 'prefixed-staff', 'staff-guide', 'unknown-class']);
 });
 
@@ -142,7 +127,7 @@ it('shows general, own-panel and panel-less articles, and hides another panel\'s
     $user = finCodexScopeUser();
     $this->usesPanel('admin', $user);
 
-    expect(finCodexSeen(Viewer::authenticated($user, 'web')))
+    expect(finCodexSeenSlugs(Viewer::authenticated($user, 'web')))
         ->toBe(['admin-guide', 'intro', 'plain-page', 'unknown-class']);
 });
 
@@ -153,7 +138,7 @@ it('shows an article bound to a class the admin panel registers', function (): v
     $user = finCodexScopeUser();
     $this->usesPanel('admin', $user);
 
-    expect(finCodexSeen(Viewer::authenticated($user, 'web')))->toBe(['intro', 'shared-page']);
+    expect(finCodexSeenSlugs(Viewer::authenticated($user, 'web')))->toBe(['intro', 'shared-page']);
 });
 
 it('shows the same panel-less class article on the staff panel', function (): void {
@@ -163,7 +148,7 @@ it('shows the same panel-less class article on the staff panel', function (): vo
     $user = finCodexScopeUser();
     $this->usesPanel('staff', $user);
 
-    expect(finCodexSeen(Viewer::authenticated($user, 'staff')))->toBe(['intro', 'shared-page']);
+    expect(finCodexSeenSlugs(Viewer::authenticated($user, 'staff')))->toBe(['intro', 'shared-page']);
 });
 
 /*
@@ -181,7 +166,7 @@ it('shows a panel-less route context on the panel the route names', function ():
     $user = finCodexScopeUser();
     $this->usesPanel('admin', $user);
 
-    expect(finCodexSeen(Viewer::authenticated($user, 'web')))->toBe(['any-route', 'intro']);
+    expect(finCodexSeenSlugs(Viewer::authenticated($user, 'web')))->toBe(['any-route', 'intro']);
 });
 
 it('shows that same panel-less route context on another panel', function (): void {
@@ -191,7 +176,7 @@ it('shows that same panel-less route context on another panel', function (): voi
     $user = finCodexScopeUser();
     $this->usesPanel('staff', $user);
 
-    expect(finCodexSeen(Viewer::authenticated($user, 'staff')))->toBe(['any-route', 'intro']);
+    expect(finCodexSeenSlugs(Viewer::authenticated($user, 'staff')))->toBe(['any-route', 'intro']);
 });
 
 it('shows a panel-less url context on a panel the path does not name', function (): void {
@@ -201,7 +186,7 @@ it('shows a panel-less url context on a panel the path does not name', function 
     $user = finCodexScopeUser();
     $this->usesPanel('staff', $user);
 
-    expect(finCodexSeen(Viewer::authenticated($user, 'staff')))->toBe(['any-url', 'intro']);
+    expect(finCodexSeenSlugs(Viewer::authenticated($user, 'staff')))->toBe(['any-url', 'intro']);
 });
 
 /*
@@ -221,7 +206,7 @@ it('shows a panel-less context on a class no panel registers', function (): void
     $this->usesPanel('admin', $user);
 
     expect(app(ContextPanels::class)->forClass(Login::class))->toBe([])
-        ->and(finCodexSeen(Viewer::authenticated($user, 'web')))->toBe(['account/signing-in', 'intro']);
+        ->and(finCodexSeenSlugs(Viewer::authenticated($user, 'web')))->toBe(['account/signing-in', 'intro']);
 });
 
 it('shows that same unregistered-class article on another panel', function (): void {
@@ -232,7 +217,7 @@ it('shows that same unregistered-class article on another panel', function (): v
     $this->usesPanel('staff', $user);
 
     expect(app(ContextPanels::class)->forClass(Login::class))->toBe([])
-        ->and(finCodexSeen(Viewer::authenticated($user, 'staff')))->toBe(['account/signing-in', 'intro']);
+        ->and(finCodexSeenSlugs(Viewer::authenticated($user, 'staff')))->toBe(['account/signing-in', 'intro']);
 });
 
 it('hides an article whose every context names a different explicit panel', function (): void {
@@ -245,7 +230,7 @@ it('hides an article whose every context names a different explicit panel', func
     $user = finCodexScopeUser();
     $this->usesPanel('admin', $user);
 
-    expect(finCodexSeen(Viewer::authenticated($user, 'web')))->toBe(['intro']);
+    expect(finCodexSeenSlugs(Viewer::authenticated($user, 'web')))->toBe(['intro']);
 });
 
 it('shows an article carrying another panel\'s context beside a panel-less one', function (): void {
@@ -259,7 +244,7 @@ it('shows an article carrying another panel\'s context beside a panel-less one',
 
     // One context without a panel is enough; the explicit staff one cannot
     // take the article away from admin on its own.
-    expect(finCodexSeen(Viewer::authenticated($user, 'web')))->toBe(['mixed']);
+    expect(finCodexSeenSlugs(Viewer::authenticated($user, 'web')))->toBe(['mixed']);
 });
 
 it('shows a two-panel article on admin', function (): void {
@@ -271,7 +256,7 @@ it('shows a two-panel article on admin', function (): void {
     $user = finCodexScopeUser();
     $this->usesPanel('admin', $user);
 
-    expect(finCodexSeen(Viewer::authenticated($user, 'web')))->toBe(['both-panels']);
+    expect(finCodexSeenSlugs(Viewer::authenticated($user, 'web')))->toBe(['both-panels']);
 });
 
 it('shows the same two-panel article on staff', function (): void {
@@ -283,7 +268,7 @@ it('shows the same two-panel article on staff', function (): void {
     $user = finCodexScopeUser();
     $this->usesPanel('staff', $user);
 
-    expect(finCodexSeen(Viewer::authenticated($user, 'staff')))->toBe(['both-panels']);
+    expect(finCodexSeenSlugs(Viewer::authenticated($user, 'staff')))->toBe(['both-panels']);
 });
 
 /*
@@ -300,7 +285,7 @@ it('reads every panel-less url context from the current panel', function (): voi
     $user = finCodexScopeUser();
     $this->usesPanel('admin', $user);
 
-    expect(finCodexSeen(Viewer::authenticated($user, 'web')))->toBe(['admin-url', 'staff-url', 'wild-url']);
+    expect(finCodexSeenSlugs(Viewer::authenticated($user, 'web')))->toBe(['admin-url', 'staff-url', 'wild-url']);
 });
 
 it('scopes url contexts that name their panel', function (): void {
@@ -310,7 +295,7 @@ it('scopes url contexts that name their panel', function (): void {
     $user = finCodexScopeUser();
     $this->usesPanel('admin', $user);
 
-    expect(finCodexSeen(Viewer::authenticated($user, 'web')))->toBe(['admin-url']);
+    expect(finCodexSeenSlugs(Viewer::authenticated($user, 'web')))->toBe(['admin-url']);
 });
 
 /*
@@ -327,7 +312,7 @@ it('shows a HasHelp-declared article on the panel that declares it', function ()
     $user = finCodexScopeUser();
     $this->usesPanel('admin', $user);
 
-    expect(finCodexSeen(Viewer::authenticated($user, 'web')))->toBe(['intro', 'users']);
+    expect(finCodexSeenSlugs(Viewer::authenticated($user, 'web')))->toBe(['intro', 'users']);
 });
 
 it('shows a HasHelp-declared article on the second panel that declares it', function (): void {
@@ -337,7 +322,7 @@ it('shows a HasHelp-declared article on the second panel that declares it', func
     $user = finCodexScopeUser();
     $this->usesPanel('staff', $user);
 
-    expect(finCodexSeen(Viewer::authenticated($user, 'staff')))->toBe(['intro', 'users']);
+    expect(finCodexSeenSlugs(Viewer::authenticated($user, 'staff')))->toBe(['intro', 'users']);
 });
 
 it('hides a HasHelp-declared article on a panel that declares nothing', function (): void {
@@ -347,7 +332,7 @@ it('hides a HasHelp-declared article on a panel that declares nothing', function
     $user = finCodexScopeUser();
     $this->usesPanel('portal', $user);
 
-    expect(finCodexSeen(Viewer::authenticated($user, 'web')))->toBe(['intro']);
+    expect(finCodexSeenSlugs(Viewer::authenticated($user, 'web')))->toBe(['intro']);
 });
 
 /*
@@ -363,7 +348,7 @@ it('lets a panel-bound section take its general child on its own panel', functio
     $user = finCodexScopeUser();
     $this->usesPanel('admin', $user);
 
-    expect(finCodexSeen(Viewer::authenticated($user, 'web')))->toBe(['manuals', 'manuals/roles']);
+    expect(finCodexSeenSlugs(Viewer::authenticated($user, 'web')))->toBe(['manuals', 'manuals/roles']);
 });
 
 it('hides a panel-bound section and its general child on another panel', function (): void {
@@ -373,7 +358,7 @@ it('hides a panel-bound section and its general child on another panel', functio
     $user = finCodexScopeUser();
     $this->usesPanel('staff', $user);
 
-    expect(finCodexSeen(Viewer::authenticated($user, 'staff')))->toBe([]);
+    expect(finCodexSeenSlugs(Viewer::authenticated($user, 'staff')))->toBe([]);
 });
 
 it('hides a general container whose only descendant belongs to another panel', function (): void {
@@ -383,7 +368,7 @@ it('hides a general container whose only descendant belongs to another panel', f
     $user = finCodexScopeUser();
     $this->usesPanel('admin', $user);
 
-    expect(finCodexSeen(Viewer::authenticated($user, 'web')))->toBe([]);
+    expect(finCodexSeenSlugs(Viewer::authenticated($user, 'web')))->toBe([]);
 });
 
 /*
@@ -402,7 +387,7 @@ it('keeps a general section that has a body of its own when no descendant surviv
     $user = finCodexScopeUser();
     $this->usesPanel('admin', $user);
 
-    expect(finCodexSeen(Viewer::authenticated($user, 'web')))->toBe(['guides']);
+    expect(finCodexSeenSlugs(Viewer::authenticated($user, 'web')))->toBe(['guides']);
 });
 
 it('treats a whitespace-only section body as no body at all', function (): void {
@@ -412,7 +397,7 @@ it('treats a whitespace-only section body as no body at all', function (): void 
     $user = finCodexScopeUser();
     $this->usesPanel('admin', $user);
 
-    expect(finCodexSeen(Viewer::authenticated($user, 'web')))->toBe([]);
+    expect(finCodexSeenSlugs(Viewer::authenticated($user, 'web')))->toBe([]);
 });
 
 it('reads the body of a section that has no default-locale translation', function (): void {
@@ -424,7 +409,7 @@ it('reads the body of a section that has no default-locale translation', functio
     $user = finCodexScopeUser();
     $this->usesPanel('admin', $user);
 
-    expect(finCodexSeen(Viewer::authenticated($user, 'web')))->toBe(['guides']);
+    expect(finCodexSeenSlugs(Viewer::authenticated($user, 'web')))->toBe(['guides']);
 });
 
 it('shows that same container and child on the panel the child belongs to', function (): void {
@@ -434,7 +419,7 @@ it('shows that same container and child on the panel the child belongs to', func
     $user = finCodexScopeUser();
     $this->usesPanel('staff', $user);
 
-    expect(finCodexSeen(Viewer::authenticated($user, 'staff')))->toBe(['guides', 'guides/staff-only']);
+    expect(finCodexSeenSlugs(Viewer::authenticated($user, 'staff')))->toBe(['guides', 'guides/staff-only']);
 });
 
 it('keeps a container alive for its surviving general child', function (): void {
@@ -445,7 +430,7 @@ it('keeps a container alive for its surviving general child', function (): void 
     $user = finCodexScopeUser();
     $this->usesPanel('admin', $user);
 
-    expect(finCodexSeen(Viewer::authenticated($user, 'web')))->toBe(['guides', 'guides/intro']);
+    expect(finCodexSeenSlugs(Viewer::authenticated($user, 'web')))->toBe(['guides', 'guides/intro']);
 });
 
 it('empties a whole chain of containers when the only leaf belongs elsewhere', function (): void {
@@ -456,7 +441,7 @@ it('empties a whole chain of containers when the only leaf belongs elsewhere', f
     $user = finCodexScopeUser();
     $this->usesPanel('admin', $user);
 
-    expect(finCodexSeen(Viewer::authenticated($user, 'web')))->toBe([]);
+    expect(finCodexSeenSlugs(Viewer::authenticated($user, 'web')))->toBe([]);
 });
 
 it('revives the whole chain of containers as soon as one leaf survives', function (): void {
@@ -468,7 +453,7 @@ it('revives the whole chain of containers as soon as one leaf survives', functio
     $user = finCodexScopeUser();
     $this->usesPanel('admin', $user);
 
-    expect(finCodexSeen(Viewer::authenticated($user, 'web')))->toBe(['a', 'a/b', 'a/b/d']);
+    expect(finCodexSeenSlugs(Viewer::authenticated($user, 'web')))->toBe(['a', 'a/b', 'a/b/d']);
 });
 
 /*
@@ -484,7 +469,7 @@ it('shows the fixture file section and its child on admin', function (): void {
     $user = finCodexScopeUser();
     $this->usesPanel('admin', $user);
 
-    expect(finCodexSeen(Viewer::authenticated($user, 'web')))->toBe(['intro', 'users', 'users/roles']);
+    expect(finCodexSeenSlugs(Viewer::authenticated($user, 'web')))->toBe(['intro', 'users', 'users/roles']);
 });
 
 it('hides the fixture file section and its child on a panel that declares neither', function (): void {
@@ -493,7 +478,7 @@ it('hides the fixture file section and its child on a panel that declares neithe
     $user = finCodexScopeUser();
     $this->usesPanel('portal', $user);
 
-    expect(finCodexSeen(Viewer::authenticated($user, 'web')))->toBe(['intro']);
+    expect(finCodexSeenSlugs(Viewer::authenticated($user, 'web')))->toBe(['intro']);
 });
 
 it('lifts the scope for a viewer the policy allows, and for nobody else', function (string $policy, array $expected): void {
@@ -505,7 +490,7 @@ it('lifts the scope for a viewer the policy allows, and for nobody else', functi
     // After usesPanel(): the plugin's boot registers the shipped policy again.
     Gate::policy(Article::class, $policy);
 
-    expect(finCodexSeen(Viewer::authenticated($user, 'web')))->toBe($expected);
+    expect(finCodexSeenSlugs(Viewer::authenticated($user, 'web')))->toBe($expected);
 })->with([
     'a host that grants viewAllPanels' => [
         ViewAllPanelsArticlePolicy::class,
@@ -528,7 +513,7 @@ it('never asks the policy about a guest', function (): void {
 
     Gate::policy(Article::class, FinCodexAskedArticlePolicy::class);
 
-    expect(finCodexSeen(Viewer::guest('web')))->toBe(['admin-guide', 'intro', 'plain-page', 'unknown-class']);
+    expect(finCodexSeenSlugs(Viewer::guest('web')))->toBe(['admin-guide', 'intro', 'plain-page', 'unknown-class']);
 });
 
 it('asks the policy about a viewer that has a user', function (): void {
@@ -539,7 +524,7 @@ it('asks the policy about a viewer that has a user', function (): void {
 
     Gate::policy(Article::class, FinCodexAskedArticlePolicy::class);
 
-    expect(fn (): array => finCodexSeen(Viewer::authenticated($user, 'web')))
+    expect(fn (): array => finCodexSeenSlugs(Viewer::authenticated($user, 'web')))
         ->toThrow(RuntimeException::class, 'asked');
 });
 
@@ -551,7 +536,7 @@ it('runs a host closure hook first and vetoes on top of it', function (): void {
     $user = finCodexScopeUser();
     $this->usesPanel('admin', $user);
 
-    expect(finCodexSeen(Viewer::authenticated($user, 'web')))->toBe(['admin-guide', 'plain-page', 'unknown-class']);
+    expect(finCodexSeenSlugs(Viewer::authenticated($user, 'web')))->toBe(['admin-guide', 'plain-page', 'unknown-class']);
 });
 
 it('resolves an inner hook given as a class name through the container', function (): void {
@@ -561,7 +546,7 @@ it('resolves an inner hook given as a class name through the container', functio
     $user = finCodexScopeUser();
     $this->usesPanel('admin', $user);
 
-    expect(finCodexSeen(Viewer::authenticated($user, 'web')))->toBe(['admin-guide', 'plain-page', 'unknown-class']);
+    expect(finCodexSeenSlugs(Viewer::authenticated($user, 'web')))->toBe(['admin-guide', 'plain-page', 'unknown-class']);
 });
 
 it('refuses an inner hook that is neither null, a class name nor a callable', function (): void {
@@ -571,7 +556,7 @@ it('refuses an inner hook that is neither null, a class name nor a callable', fu
     $user = finCodexScopeUser();
     $this->usesPanel('admin', $user);
 
-    expect(fn (): array => finCodexSeen(Viewer::authenticated($user, 'web')))
+    expect(fn (): array => finCodexSeenSlugs(Viewer::authenticated($user, 'web')))
         ->toThrow(InvalidArgumentException::class);
 });
 
@@ -612,15 +597,15 @@ it('keeps its verdict map for the request and drops it with the memo', function 
     $viewer = Viewer::authenticated($user, 'web');
     $onAdmin = ['admin-guide', 'intro', 'plain-page', 'unknown-class'];
 
-    expect(finCodexSeen($viewer))->toBe($onAdmin);
+    expect(finCodexSeenSlugs($viewer))->toBe($onAdmin);
 
     finCodexScopeArticle('late-staff', ContextType::Route, 'filament.staff.pages.dashboard', 'staff');
 
-    expect(finCodexSeen($viewer))->toBe(['admin-guide', 'intro', 'late-staff', 'plain-page', 'unknown-class']);
+    expect(finCodexSeenSlugs($viewer))->toBe(['admin-guide', 'intro', 'late-staff', 'plain-page', 'unknown-class']);
 
     forgetHelpMemo();
 
-    expect(finCodexSeen($viewer))->toBe($onAdmin);
+    expect(finCodexSeenSlugs($viewer))->toBe($onAdmin);
 });
 
 it('leaves the published rule to the core', function (): void {
@@ -632,7 +617,7 @@ it('leaves the published rule to the core', function (): void {
     $user = finCodexScopeUser();
     $this->usesPanel('admin', $user);
 
-    expect(finCodexSeen(Viewer::authenticated($user, 'web')))->toBe(['intro']);
+    expect(finCodexSeenSlugs(Viewer::authenticated($user, 'web')))->toBe(['intro']);
 });
 
 /*
@@ -649,5 +634,5 @@ it('counts an unpublished descendant of this panel for the container rule', func
     $user = finCodexScopeUser();
     $this->usesPanel('admin', $user);
 
-    expect(finCodexSeen(Viewer::authenticated($user, 'web')))->toBe(['guides']);
+    expect(finCodexSeenSlugs(Viewer::authenticated($user, 'web')))->toBe(['guides']);
 });

@@ -8,6 +8,7 @@ use Filament\Forms\Components\Field;
 use FinityLabs\FinCodex\Ai\NotifyTranslationFinished;
 use FinityLabs\FinCodex\Coverage\CoverageReport;
 use FinityLabs\FinCodex\Coverage\SourceWarnings;
+use FinityLabs\FinCodex\Editor\ContextPicker;
 use FinityLabs\FinCodex\Forms\CodexHelp;
 use FinityLabs\FinCodex\Help\ArticleLookup;
 use FinityLabs\FinCodex\Help\DeclaredContexts;
@@ -65,7 +66,8 @@ class FinCodexServiceProvider extends PackageServiceProvider
      * ArticleLookup is scoped for the same reason as CurrentPage: one lookup
      * per request answers the title and the gate verdict for every field
      * hint on a page, so ten hints cost one ContentSource::all() and one
-     * viewer.
+     * viewer. ContextPicker is scoped so its per-panel row lists are built
+     * once per request rather than once per contexts-repeater row.
      *
      * CoverageReport is scoped because the coverage page and the navigation
      * badge that links to it must show the same number, and because that
@@ -96,6 +98,7 @@ class FinCodexServiceProvider extends PackageServiceProvider
 
         $this->app->scoped(CurrentPage::class);
         $this->app->scoped(ArticleLookup::class);
+        $this->app->scoped(ContextPicker::class);
         $this->app->scoped(CoverageReport::class);
         $this->app->scoped(SourceWarnings::class);
         $this->app->singleton(DeclaredContexts::class);
@@ -138,22 +141,29 @@ class FinCodexServiceProvider extends PackageServiceProvider
      * A write to an article, a translation or a context drops the decorated
      * source's request memo, so a save earlier in the same request is visible
      * to the next read, which is the guarantee the core's DatabaseSource gives
-     * by never memoising. Only a source that has already been resolved is
-     * touched: resolving it from inside a model event during a migration or a
-     * seeder would be the wrong moment.
+     * by never memoising. The coverage report and the source warnings memoise
+     * one reading of that source per request and are dropped with it, so the
+     * coverage page's attach and import see their own write in the render they
+     * trigger. Only an instance that has already been resolved is touched:
+     * resolving one from inside a model event during a migration or a seeder
+     * would be the wrong moment.
      */
     protected function forgetSourceMemoOnWrite(): void
     {
         $forget = function (): void {
-            if (! $this->app->resolved(ContentSource::class)) {
-                return;
+            if ($this->app->resolved(ContentSource::class)) {
+                $source = $this->app->make(ContentSource::class);
+
+                // A host may rebind the source without the decorator, so the check stays.
+                if ($source instanceof DeclaredContextsSource) { // @phpstan-ignore instanceof.alwaysTrue
+                    $source->forget();
+                }
             }
 
-            $source = $this->app->make(ContentSource::class);
-
-            // A host may rebind the source without the decorator, so the check stays.
-            if ($source instanceof DeclaredContextsSource) { // @phpstan-ignore instanceof.alwaysTrue
-                $source->forget();
+            foreach ([CoverageReport::class, SourceWarnings::class] as $memo) {
+                if ($this->app->resolved($memo)) {
+                    $this->app->make($memo)->forget();
+                }
             }
         };
 

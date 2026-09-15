@@ -5,7 +5,6 @@ declare(strict_types=1);
 return [
     'navigation' => [
         'group' => 'Hilfe',
-        'help' => 'Hilfe',
     ],
     'button' => [
         'tooltip' => 'Hilfe',
@@ -332,7 +331,6 @@ return [
     'coverage' => [
         'navigation' => 'Abdeckung',
         'title' => 'Hilfe-Abdeckung',
-        'description' => 'Welche Seiten dieser Anwendung einen Hilfeartikel haben.',
         'badge_tooltip' => 'Seiten ohne Hilfeartikel',
         'columns' => [
             'page' => 'Seite',
@@ -356,7 +354,6 @@ return [
         'actions' => [
             'write' => 'Artikel schreiben',
             'attach' => 'An einen Artikel hängen',
-            'edit' => 'Artikel bearbeiten',
             'import' => 'Importieren und bearbeiten',
         ],
         'attach' => [

@@ -26,9 +26,10 @@ use Livewire\Livewire;
  * landing) are checked in that order, and the not-found one answers 200 so the
  * rail and the search stay usable beside it.
  *
- * Helpers are file-local and finCodexHelpColumn*-prefixed. Pest "global"
- * helpers only exist for the files a run loads, so a single-file run cannot see
- * HelpCenterPageTest's finCodexHelpCenter* functions.
+ * Helpers are file-local and finCodexHelpColumn*-prefixed. A sibling test
+ * file's functions only exist when that file is loaded, so a single-file run
+ * cannot see HelpCenterPageTest's finCodexHelpCenter* functions; anything two
+ * files need lives in tests/Pest.php, which every run loads.
  */
 
 /**
@@ -38,7 +39,7 @@ use Livewire\Livewire;
  */
 function finCodexHelpColumnUser(string $email = 'column@example.com'): User
 {
-    $user = User::firstOrCreate(['email' => $email], ['name' => 'Reader']);
+    $user = finCodexUser($email, 'Reader');
 
     test()->actingAs($user, 'web');
 

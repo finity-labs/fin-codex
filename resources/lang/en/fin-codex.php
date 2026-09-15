@@ -5,7 +5,6 @@ declare(strict_types=1);
 return [
     'navigation' => [
         'group' => 'Help',
-        'help' => 'Help',
     ],
     'button' => [
         'tooltip' => 'Help',
@@ -332,7 +331,6 @@ return [
     'coverage' => [
         'navigation' => 'Coverage',
         'title' => 'Help coverage',
-        'description' => 'Which screens of this application have a help article.',
         'badge_tooltip' => 'Screens without a help article',
         'columns' => [
             'page' => 'Page',
@@ -356,7 +354,6 @@ return [
         'actions' => [
             'write' => 'Write article',
             'attach' => 'Attach to an article',
-            'edit' => 'Edit article',
             'import' => 'Import and edit',
         ],
         'attach' => [

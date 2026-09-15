@@ -8,7 +8,6 @@ use Filament\Actions\Action;
 use Filament\Forms\Components\FileUpload;
 use Filament\Notifications\Notification;
 use Filament\Support\Icons\Heroicon;
-use FinityLabs\FinCodex\Auth\ArticleAbility;
 use FinityLabs\FinCodex\Editor\MediaRecorder;
 use FinityLabs\FinCodex\FinCodexPlugin;
 use FinityLabs\FinCodex\Resources\ArticleResource\RelationManagers\MediaRelationManager;
@@ -46,11 +45,7 @@ final class UploadMediaAction
             ->modalHeading(__('fin-codex::fin-codex.media.upload.heading'))
             ->modalSubmitActionLabel(__('fin-codex::fin-codex.media.upload.label'))
             ->modalWidth('lg')
-            ->authorize(static function (MediaRelationManager $livewire): bool {
-                $owner = $livewire->getOwnerRecord();
-
-                return $owner instanceof Article && ArticleAbility::allows('update', $owner);
-            })
+            ->authorize(static fn (MediaRelationManager $livewire): bool => MediaRelationManager::mayManageMediaOf($livewire->getOwnerRecord()))
             ->schema([
                 FileUpload::make('file')
                     ->label(__('fin-codex::fin-codex.media.upload.file'))

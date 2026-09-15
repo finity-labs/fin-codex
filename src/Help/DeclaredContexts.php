@@ -21,7 +21,7 @@ use FinityLabs\LinCodex\Enums\ContextType;
  *
  * A resource-level declaration emits a `class:` context on the resource and
  * one exact `route:` context per registered resource page. The drawer resolves
- * a resource page by its resource class (Phase 3 identity) and de-duplicates
+ * a resource page by its resource class (PageIdentity's rule) and de-duplicates
  * the doubled slug, so readers see one entry; lin-codex's RouteCoverage
  * matches `class:` keys against the route's page class, never the resource,
  * so the `route:` contexts are what make list, create and edit count as

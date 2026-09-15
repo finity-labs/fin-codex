@@ -7,10 +7,8 @@ namespace FinityLabs\FinCodex\Resources\ArticleResource\Actions;
 use Filament\Actions\Action;
 use Filament\Support\Enums\Width;
 use Filament\Support\Icons\Heroicon;
-use FinityLabs\FinCodex\Auth\ArticleAbility;
 use FinityLabs\FinCodex\Editor\MediaReferences;
 use FinityLabs\FinCodex\Resources\ArticleResource\RelationManagers\MediaRelationManager;
-use FinityLabs\LinCodex\Models\Article;
 use FinityLabs\LinCodex\Models\Media;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Number;
@@ -37,11 +35,7 @@ final class ViewMediaAction
             ->icon(Heroicon::OutlinedMagnifyingGlassPlus)
             ->iconButton()
             ->color('gray')
-            ->authorize(static function (MediaRelationManager $livewire): bool {
-                $owner = $livewire->getOwnerRecord();
-
-                return $owner instanceof Article && ArticleAbility::allows('update', $owner);
-            })
+            ->authorize(static fn (MediaRelationManager $livewire): bool => MediaRelationManager::mayManageMediaOf($livewire->getOwnerRecord()))
             ->visible(static fn (Media $record): bool => self::isViewable($record))
             ->modalHeading(static fn (Media $record): string => $record->name)
             ->modalDescription(static fn (Media $record): string => Number::fileSize($record->size, precision: 1).' · '.$record->mime_type)

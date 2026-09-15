@@ -30,6 +30,7 @@ use Filament\Support\Icons\Heroicon;
 use FinityLabs\FinCodex\Auth\ArticleAbility;
 use FinityLabs\FinCodex\Coverage\CoverageReport;
 use FinityLabs\FinCodex\FinCodexPlugin;
+use FinityLabs\FinCodex\Livewire\Concerns\RendersHelpSchemas;
 use FinityLabs\FinCodex\Scope\PanelScopeGate;
 use FinityLabs\FinSupport\Pages\Concerns\HasPageShieldSupport;
 use FinityLabs\LinCodex\Data\TreeNode;
@@ -39,14 +40,12 @@ use FinityLabs\LinCodex\Models\Article;
 use FinityLabs\LinCodex\Reading\ArticleReader;
 use FinityLabs\LinCodex\Reading\ReadArticle;
 use FinityLabs\LinCodex\Reading\TreeBuilder;
-use FinityLabs\LinCodex\Search\SearchHit;
 use FinityLabs\LinCodex\Search\SearchResult;
 use FinityLabs\LinCodex\View\PageHelpResolver;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\Js;
-use Illuminate\Support\Str;
 use UnitEnum;
 
 /**
@@ -89,6 +88,7 @@ class HelpCenter extends Page
 {
     use CapturesPageHelp;
     use HasPageShieldSupport;
+    use RendersHelpSchemas;
     use SearchesArticles;
 
     protected static ?string $slug = 'help';
@@ -315,7 +315,9 @@ class HelpCenter extends Page
                     // can hold.
                     Select::make('panelFilter')
                         ->label(__('fin-codex::fin-codex.help_center.panel_filter'))
-                        ->options($this->panelFilterOptions())
+                        // A closure, so the coverage report behind the options
+                        // is only built for the viewer who gets the select.
+                        ->options(fn (): array => $this->panelFilterOptions())
                         ->selectablePlaceholder(false)
                         ->native(false)
                         ->live()
@@ -341,7 +343,7 @@ class HelpCenter extends Page
                             'contents' => Tab::make(__('fin-codex::fin-codex.help_center.contents'))
                                 ->extraAttributes(['data-fin-codex-help-tab' => 'contents'])
                                 ->schema([
-                                    ...$this->treeComponents($this->tree(), 0),
+                                    ...$this->helpTreeComponents($this->tree(), $this->codexSlug, collapseDeep: true),
                                     ...$this->treeArrivalComponents(),
                                 ]),
                             'search' => Tab::make(__('lin-codex::lin-codex.ui.search'))
@@ -394,7 +396,12 @@ class HelpCenter extends Page
     {
         $filter = $this->panelFilter;
 
-        if ($filter === null || $filter === self::ALL_PANELS) {
+        // The grant is asked again here, not only where the select is drawn: a
+        // public Livewire property can be set from the browser whether or not
+        // the field for it rendered, and the preview seam answers before the
+        // grant, so without this a reader could ask for another panel's tree
+        // and hits by hand. Without the grant the normal rule is the answer.
+        if ($filter === null || $filter === self::ALL_PANELS || ! $this->showsPanelFilter()) {
             return $callback();
         }
 
@@ -438,93 +445,6 @@ class HelpCenter extends Page
             '<div wire:ignore x-data x-init="const q = sessionStorage.getItem(\'fin-codex-help-q\');'
             .' if (q) { $wire.set(\'query\', q) }" hidden></div>',
         ));
-    }
-
-    /**
-     * The Contents tab: the whole tree the viewer may read. A node that has
-     * children is a collapsible section, whether it is a folder group or an
-     * article — an article-rooted section keeps its own link as the heading, so
-     * the label opens the article and the chevron beside it works the children.
-     * A node with no children is the link alone.
-     *
-     * The entry for the article being read is primary where every other entry
-     * is gray, and it alone says it is the current page. Colour on its own is
-     * not a marker: an entry that looks like its siblings tells the reader
-     * nothing, which is what the v0.5 audit found here.
-     *
-     * The root article appears once. The heading link is the only way into it,
-     * so nothing repeats it among its children.
-     *
-     * The depth only picks the FIRST-VISIT open state: the top level comes up
-     * expanded so real article titles are there to read at once, and anything
-     * deeper comes up closed so a big library does not arrive as a wall. On
-     * every later visit the browser's own remembered state wins — see
-     * sectionId() and treeArrivalComponents().
-     *
-     * @param  list<TreeNode>  $nodes
-     *
-     * @return list<Component>
-     */
-    private function treeComponents(array $nodes, int $depth): array
-    {
-        $components = [];
-
-        foreach ($nodes as $node) {
-            if ($node->isGroup()) {
-                $components[] = Section::make($node->label)
-                    ->id($this->sectionId($node->slug))
-                    ->compact()
-                    ->collapsible()
-                    ->persistCollapsed()
-                    ->collapsed($depth > 0)
-                    ->extraAttributes(['data-fin-codex-help-node' => $node->slug])
-                    ->schema($this->treeComponents($node->children, $depth + 1));
-
-                continue;
-            }
-
-            // merge: true is required both times — linkTo() already carries the
-            // node marker in its own attribute bag, and a second bare call
-            // would replace it rather than add to it.
-            $link = $this->linkTo($node->slug, $node->label)
-                ->color($node->slug === $this->codexSlug ? 'primary' : 'gray');
-
-            if ($node->slug === $this->codexSlug) {
-                $link = $link->extraAttributes([
-                    'aria-current' => 'page',
-                    'data-fin-codex-help-active' => 'true',
-                ], merge: true);
-            }
-
-            if ($node->children === []) {
-                $components[] = Actions::make([$link]);
-
-                continue;
-            }
-
-            // A Filament Action is Htmlable, so the whole link renders inside
-            // the section's heading. The guard is what keeps a click on the
-            // label from flipping the section as well as opening the article:
-            // Filament's toggle listens on the element around the heading. An
-            // empty string, never true — a true value renders as its own
-            // attribute name, which Alpine would try to evaluate.
-            $link = $link->extraAttributes(['x-on:click.stop' => ''], merge: true);
-
-            $components[] = Section::make($link)
-                // Not optional. Filament's own key closure would put the heading
-                // through a string-typed helper, and an Action cannot be cast to
-                // one; setting the key replaces the closure so it never runs.
-                ->key($this->sectionId($node->slug).'::section')
-                ->id($this->sectionId($node->slug))
-                ->compact()
-                ->collapsible()
-                ->persistCollapsed()
-                ->collapsed($depth > 0)
-                ->extraAttributes(['data-fin-codex-help-node' => $node->slug])
-                ->schema($this->treeComponents($node->children, $depth + 1));
-        }
-
-        return $components;
     }
 
     /**
@@ -595,7 +515,7 @@ class HelpCenter extends Page
             $path = $path === '' ? $segment : $path.'/'.$segment;
 
             if (in_array($path, $sections, true)) {
-                $ids[] = $this->sectionId($path);
+                $ids[] = $this->helpSectionId($path);
             }
         }
 
@@ -626,29 +546,10 @@ class HelpCenter extends Page
     }
 
     /**
-     * The DOM id of one tree group's section — and, at the same time, the key its
-     * open state is remembered under: Section::id() feeds both, so an id that
-     * moved between renders, between panels or across the re-mount every article
-     * link causes would silently lose what the reader arranged.
-     *
-     * Derived from the node slug and nothing else, for exactly that reason, and
-     * put through Str::slug() because Filament strips a handful of characters out
-     * of a custom id and a stripped id would no longer match the key.
-     */
-    private function sectionId(string $slug): string
-    {
-        return 'fin-codex-help-'.Str::slug(str_replace('/', '-', $slug));
-    }
-
-    /**
      * The Search tab: the core's hits, its rate-limit line or its no-results
-     * line.
-     *
-     * The hits stay in the rail rather than taking the middle column, so the
-     * article a reader is on is still there beside them and a wrong guess costs
-     * nothing. The rail is narrow and a hit carries three pieces of text, so the
-     * block is kept generous: the title is the link, the section path is a small
-     * grey line above the snippet, and the snippet reads at normal size.
+     * line. The hits stay in the rail rather than taking the middle column, so
+     * the article a reader is on is still there beside them and a wrong guess
+     * costs nothing.
      *
      * @return list<Component>
      */
@@ -656,34 +557,7 @@ class HelpCenter extends Page
     {
         $result = $this->searchResultMemo();
 
-        if ($result === null) {
-            return [];
-        }
-
-        if ($result->rateLimited) {
-            return [Text::make(__('lin-codex::lin-codex.ui.rate_limited', ['seconds' => $result->retryAfterSeconds]))->color('warning')];
-        }
-
-        if ($result->hits === []) {
-            return [Text::make(__('lin-codex::lin-codex.ui.no_results'))->color('gray')];
-        }
-
-        return array_map(fn (SearchHit $hit): Group => Group::make([
-            Actions::make([
-                $this->linkTo($hit->slug, $hit->title)
-                    ->extraAttributes(['data-fin-codex-help-hit' => $hit->slug], merge: true),
-            ]),
-            Text::make(implode(' › ', $hit->sectionPath))
-                ->size(TextSize::ExtraSmall)
-                ->color('gray')
-                ->hidden($hit->sectionPath === []),
-            // SnippetBuilder's output: everything escaped already, with <mark>
-            // around the matched prefixes and nothing else. Escaping it again
-            // would show the reader the tag, and adding marks of our own would
-            // disagree with what the JSON API and the drawer show for the same
-            // search.
-            Text::make(new HtmlString($hit->snippet))->size(TextSize::Small),
-        ]), $result->hits);
+        return $result === null ? [] : $this->helpSearchComponents($result);
     }
 
     /**
@@ -736,10 +610,7 @@ class HelpCenter extends Page
         $components = [];
 
         if ($read->breadcrumbs !== []) {
-            $components[] = Actions::make(array_map(
-                fn (array $crumb): Action => $this->linkTo($crumb['slug'], $crumb['title'])->size('sm')->color('gray'),
-                $read->breadcrumbs,
-            ));
+            $components[] = $this->helpBreadcrumbs($read->breadcrumbs);
         }
 
         $components[] = Text::make($read->translation->title)
@@ -760,12 +631,7 @@ class HelpCenter extends Page
         if ($read->related !== []) {
             // At the bottom, where a reader meets them after reading, rather
             // than competing with the headings rail for the right column.
-            $components[] = Section::make(__('lin-codex::lin-codex.ui.related'))
-                ->compact()
-                ->schema([Actions::make(array_map(
-                    fn (array $entry): Action => $this->linkTo($entry['slug'], $entry['title']),
-                    $read->related,
-                ))]);
+            $components[] = $this->helpRelatedSection($read->related);
         }
 
         return $components;
@@ -841,7 +707,7 @@ class HelpCenter extends Page
         foreach ($this->tree() as $node) {
             $components[] = $node->isGroup()
                 ? Text::make($node->label)->weight(FontWeight::Medium)
-                : Actions::make([$this->linkTo($node->slug, $node->label)]);
+                : Actions::make([$this->helpLink($node->slug, $node->label)]);
         }
 
         return $components;
@@ -914,11 +780,7 @@ class HelpCenter extends Page
             Section::make(__('lin-codex::lin-codex.ui.on_this_page'))
                 ->compact()
                 ->schema([
-                    UnorderedList::make(array_map(
-                        static fn (array $entry): Text => Text::make(new HtmlString('<a href="#'.e($entry['id']).'">'.e($entry['text']).'</a>'))->size(TextSize::Small),
-                        $toc,
-                    ))
-                        ->columns(1),
+                    UnorderedList::make($this->helpHeadingEntries($toc))->columns(1),
                 ]),
         ];
     }
@@ -959,21 +821,38 @@ class HelpCenter extends Page
      * action, so the address bar is always right, the back button walks
      * articles and a reader can copy or open the link in a new tab.
      *
-     * Named after the slug the way the drawer names its own, so two links to
-     * one article in one schema do not collide.
-     *
      * The colour is the caller's. Filament renders a link action with no colour
      * of its own in the primary one, so the tree sets gray on every entry but
-     * the article being read — the contrast CENTER-02 asks for. The four other
-     * callers here (search hits, breadcrumbs, related, the landing list) are
-     * not a tree and keep what they have.
+     * the article being read. The other callers here (search hits, breadcrumbs,
+     * related, the landing list) are not a tree and keep what they have.
      */
-    protected function linkTo(string $slug, string $label): Action
+    protected function helpLink(string $slug, string $label): Action
     {
-        return Action::make('open-'.Str::slug(str_replace('/', '-', $slug)))
+        return Action::make($this->helpActionName($slug))
             ->link()
             ->label($label)
             ->url(static::getUrl([self::SLUG_PARAMETER => $slug]))
-            ->extraAttributes(['data-fin-codex-help-node' => $slug]);
+            ->extraAttributes([$this->helpNodeAttribute() => $slug]);
+    }
+
+    protected function helpSectionIdPrefix(): string
+    {
+        return 'fin-codex-help-';
+    }
+
+    protected function helpNodeAttribute(): string
+    {
+        return 'data-fin-codex-help-node';
+    }
+
+    protected function helpHitAttribute(): string
+    {
+        return 'data-fin-codex-help-hit';
+    }
+
+    /** The arrival dispatcher scrolls to this marker; see treeArrivalComponents(). */
+    protected function helpActiveAttributes(): array
+    {
+        return ['data-fin-codex-help-active' => 'true'];
     }
 }

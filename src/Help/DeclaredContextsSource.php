@@ -42,7 +42,7 @@ use Illuminate\Http\Request;
  * Keyed on the request instance rather than a flag because this is a
  * singleton: Octane flushes it between requests, Testbench does not.
  *
- * META_KEY exists for two later consumers. Phase 5's editor lists the
+ * META_KEY exists for two consumers. The editor lists the
  * synthetic contexts read-only as "declared in code", and any exporter that
  * is fed a decorated article must leave the key and the marked contexts out
  * of front matter (FrontMatterWriter writes every meta key). The core's own

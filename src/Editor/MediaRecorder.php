@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use RuntimeException;
+use Symfony\Component\Mime\MimeTypes;
 
 /**
  * Where an image dropped into the Markdown editor lands, and who is on the
@@ -45,6 +46,8 @@ use RuntimeException;
  */
 final class MediaRecorder
 {
+    public function __construct(private readonly MediaReferences $references) {}
+
     /**
      * Store one upload and record it, returning the stored path.
      *
@@ -83,16 +86,22 @@ final class MediaRecorder
      * The name the file is stored under: its own, not a hash, so the URL an
      * article links and the name a browser saves it as both read like the
      * upload. Slugified, because the URL lands inside Markdown, where a
-     * space ends the link; the extension is the upload's, lower-cased. A
-     * second file of the same name in the same directory gets -2, -3.
+     * space ends the link. A second file of the same name in the same
+     * directory gets -2, -3.
+     *
+     * The extension has to agree with the content. Filament validates the
+     * MIME type it sniffs from the bytes and never the name, so a GIF that is
+     * also valid HTML, named x.html, would pass as image/gif and be served
+     * from the public disk as x.html. The upload's own extension is kept only
+     * when it is one of the extensions for the sniffed type; otherwise the
+     * type's usual extension is used.
      */
     private function storedName(TemporaryUploadedFile $file, string $disk, string $directory): string
     {
         $original = $file->getClientOriginalName();
         $base = Str::slug(pathinfo($original, PATHINFO_FILENAME));
         $base = $base === '' ? 'file' : $base;
-        $extension = strtolower(pathinfo($original, PATHINFO_EXTENSION));
-        $extension = $extension === '' ? strtolower((string) $file->guessExtension()) : $extension;
+        $extension = $this->extensionFor($file, strtolower(pathinfo($original, PATHINFO_EXTENSION)));
         $suffix = $extension === '' ? '' : '.'.$extension;
 
         $storage = Storage::disk($disk);
@@ -103,6 +112,21 @@ final class MediaRecorder
         }
 
         return $name;
+    }
+
+    /**
+     * The upload's extension when the sniffed type lists it, else the type's
+     * first extension, else the upload's when the type is unknown to the map.
+     */
+    private function extensionFor(TemporaryUploadedFile $file, string $client): string
+    {
+        $extensions = MimeTypes::getDefault()->getExtensions((string) $file->getMimeType());
+
+        if ($extensions === []) {
+            return $client;
+        }
+
+        return in_array($client, $extensions, true) ? $client : $extensions[0];
     }
 
     /**
@@ -133,7 +157,7 @@ final class MediaRecorder
         $linked = 0;
 
         foreach (Media::query()->whereNull('article_id')->get() as $media) {
-            $url = $this->url($media);
+            $url = $this->references->urlFor($media);
 
             if ($url === null) {
                 continue;
@@ -152,19 +176,6 @@ final class MediaRecorder
         }
 
         return $linked;
-    }
-
-    /**
-     * The public URL of one stored file, or null when its disk cannot build
-     * one: a row left behind by a disk that has since been removed from the
-     * host's config must not turn every article save into a 500.
-     */
-    private function url(Media $media): ?string
-    {
-        /** @var string|null $url */
-        $url = rescue(fn (): string => Storage::disk($media->disk)->url($media->path), null, report: false);
-
-        return ($url === null || $url === '') ? null : $url;
     }
 
     private function disk(): string

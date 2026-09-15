@@ -131,6 +131,28 @@ it('stores a file under its own slugified name and numbers a repeat', function (
         ->and(Media::query()->pluck('name')->all())->toBe(['Users Page (final).PNG', 'Users Page (final).PNG']);
 });
 
+it('stores a file under the extension its content has, not the one its name claims', function (): void {
+    Storage::fake('public');
+    $this->usesPanel('admin', finCodexUploadUser());
+
+    // A real PNG named as a page. The fake reads its type off the name, so the
+    // sniffed type is set the way finfo would report the bytes; Filament's
+    // rule then passes it as image/png, and the name must not be what the
+    // public disk serves it under.
+    finCodexUpload(Livewire::test(CreateArticle::class), finCodexUploadPng('shot.html')->mimeType('image/png'));
+
+    $media = Media::query()->sole();
+
+    expect($media->path)->toEndWith('/shot.png')
+        ->and($media->name)->toBe('shot.html')
+        ->and($media->mime_type)->toBe('image/png');
+
+    // A name whose extension is one of the type's own is kept as typed.
+    finCodexUpload(Livewire::test(CreateArticle::class), finCodexUploadPng('diagram.PNG'));
+
+    expect(Media::query()->orderByDesc('id')->value('path'))->toEndWith('/diagram.png');
+});
+
 it('spreads uploads over the dated folders the core directory names', function (): void {
     Storage::fake('public');
     config()->set('lin-codex.media.directory', 'help/{Y}/{m}/{d}/');

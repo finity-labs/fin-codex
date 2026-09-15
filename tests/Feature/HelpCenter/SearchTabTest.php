@@ -21,9 +21,10 @@ use Livewire\Livewire;
  * twice for one keystroke, so the limiter's own counter is read directly: one
  * keystroke must cost exactly one token.
  *
- * Helpers are file-local and finCodexHelpSearch*-prefixed. Pest "global"
- * helpers only exist for the files a run loads, so a single-file run of this
- * file cannot see a sibling test file's functions.
+ * Helpers are file-local and finCodexHelpSearch*-prefixed. A sibling test
+ * file's functions only exist when that file is loaded, so a single-file run
+ * cannot see them; anything two files need lives in tests/Pest.php, which
+ * every run loads.
  */
 
 /**
@@ -33,7 +34,7 @@ use Livewire\Livewire;
  */
 function finCodexHelpSearchUser(string $email = 'search@example.com'): User
 {
-    $user = User::firstOrCreate(['email' => $email], ['name' => 'Reader']);
+    $user = finCodexUser($email, 'Reader');
 
     test()->actingAs($user, 'web');
 
@@ -126,7 +127,7 @@ it('folds the whole rail away and remembers that, so a narrow screen can put the
     // section on every panel and across every article, so the reader arranges
     // it once.
     expect($html)->toContain('id="fin-codex-help-rail"')
-        ->toContain('fi-collapsible')
+        ->toContain('aria-controls="fin-codex-help-rail-content"')
         ->toContain(finCodexHelpSearchPersistKey('fin-codex-help-rail'));
 });
 

@@ -40,17 +40,18 @@ use Throwable;
  * getPages(), so they reach the class list through the panel's auth route
  * actions instead, and only when the row is on "any panel" — a context that
  * names both a panel and an auth class resolves to nothing and would hide the
- * article in every panel. This is not in tension with the Phase 14 rows that
- * pin ContextPanels::forClass() to an empty list for those classes: that class
+ * article in every panel. This is not in tension with ContextPanels::forClass()
+ * answering an empty list for those classes: that class
  * is untouched and still answers the same, it is only asked which panel files
  * a screen, never which classes a panel offers.
  *
- * Nothing is memoised. Both sources are already in memory (the panel
- * registry and the router's route collection), the lists are only built
- * while a form renders, and the ignore globs are read on every call on
- * purpose so a host that changes `lin-codex.coverage.ignore` at runtime is
- * honoured. Those globs are lin-codex's own answer to "which routes are
- * worth a help article"; RouteCoverage::isIgnored() is private, so the
+ * The two row lists are memoised per panel for the request: the instance is
+ * request-scoped, and the contexts repeater asks for the rows of every row it
+ * draws on every Livewire round trip, which without the memo walked the whole
+ * route collection and instantiated every kebab-named Livewire page again
+ * per repeater row. The ignore globs are read once per request with them;
+ * `lin-codex.coverage.ignore` is lin-codex's own answer to "which routes are
+ * worth a help article", and RouteCoverage::isIgnored() is private, so the
  * three-line Str::is() loop is replicated rather than reached into — a
  * subclass would inherit a report() this class has no use for.
  */
@@ -58,6 +59,12 @@ final class ContextPicker
 {
     /** The "any panel" sentinel; ArticleWriter stores it as a null panel_id. */
     public const ANY_PANEL = '*';
+
+    /** @var array<string, list<array{key: string, label: string, kind: string, uri: ?string, panel: list<string>}>> */
+    private array $classRowsMemo = [];
+
+    /** @var array<string, list<array{key: string, label: string, uri: string, panel: ?string}>> */
+    private array $routeRowsMemo = [];
 
     public function __construct(private readonly Router $router) {}
 
@@ -126,6 +133,14 @@ final class ContextPicker
      */
     public function classRows(?string $panelId): array
     {
+        return $this->classRowsMemo[$this->normalise($panelId) ?? self::ANY_PANEL] ??= $this->buildClassRows($panelId);
+    }
+
+    /**
+     * @return list<array{key: string, label: string, kind: string, uri: ?string, panel: list<string>}>
+     */
+    private function buildClassRows(?string $panelId): array
+    {
         $rows = [];
         $uris = $this->classUris();
 
@@ -180,6 +195,14 @@ final class ContextPicker
      * @return list<array{key: string, label: string, uri: string, panel: ?string}>
      */
     public function routeRows(?string $panelId): array
+    {
+        return $this->routeRowsMemo[$this->normalise($panelId) ?? self::ANY_PANEL] ??= $this->buildRouteRows($panelId);
+    }
+
+    /**
+     * @return list<array{key: string, label: string, uri: string, panel: ?string}>
+     */
+    private function buildRouteRows(?string $panelId): array
     {
         $panelId = $this->normalise($panelId);
         $prefix = $panelId === null ? null : 'filament.'.$panelId.'.';

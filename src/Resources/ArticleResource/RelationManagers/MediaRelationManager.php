@@ -69,8 +69,16 @@ final class MediaRelationManager extends RelationManager
      */
     public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
     {
-        return $ownerRecord instanceof Article
-            && ArticleAbility::allows('update', $ownerRecord);
+        return self::mayManageMediaOf($ownerRecord);
+    }
+
+    /**
+     * Whether the viewer may manage the files of this owner: the one rule the
+     * manager and its four actions share. Null and a non-article owner say no.
+     */
+    public static function mayManageMediaOf(?Model $owner): bool
+    {
+        return $owner instanceof Article && ArticleAbility::allows('update', $owner);
     }
 
     public function table(Table $table): Table

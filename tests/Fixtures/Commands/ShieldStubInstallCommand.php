@@ -34,6 +34,14 @@ class ShieldStubInstallCommand extends InstallCommand
     /** What the canned run said, standard and error output already combined. */
     public static string $shieldOutput = '';
 
+    /**
+     * The argv the command handed to the run, so a row can assert on what
+     * shield:generate would have been asked for.
+     *
+     * @var list<string>
+     */
+    public static array $shieldArgs = [];
+
     /** Shield's own skip line, as GenerateCommand::policyInfo() prints it. */
     public const SKIP_LINE = 'ArticlePolicy   skipped — provided by FinityLabs\FinCodex\Policies\ArticlePolicy';
 
@@ -42,6 +50,7 @@ class ShieldStubInstallCommand extends InstallCommand
     {
         self::$shieldExitCode = 0;
         self::$shieldOutput = '';
+        self::$shieldArgs = [];
     }
 
     protected function hasCommand(string $name): bool
@@ -56,6 +65,8 @@ class ShieldStubInstallCommand extends InstallCommand
      */
     protected function runShieldGenerate(array $args): array
     {
+        self::$shieldArgs = $args;
+
         return [self::$shieldExitCode, self::$shieldOutput];
     }
 }

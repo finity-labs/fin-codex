@@ -5,9 +5,11 @@ use FinityLabs\FinCodex\Pages\HelpCenter;
 use FinityLabs\FinCodex\Pages\HelpCoverage;
 use FinityLabs\FinCodex\Pages\HelpSettings;
 use FinityLabs\FinCodex\Resources\ArticleResource;
+use FinityLabs\FinCodex\Starter\StarterManifest;
 use FinityLabs\FinCodex\Tests\Fixtures\Commands\DecliningInstallCommand;
 use FinityLabs\FinCodex\Tests\Fixtures\Commands\ShieldStubInstallCommand;
 use FinityLabs\FinCodex\Tests\Fixtures\TempAppTree;
+use FinityLabs\LinCodex\Data\TranslationData;
 use FinityLabs\LinCodex\Enums\RevisionReason;
 use FinityLabs\LinCodex\Enums\Visibility;
 use FinityLabs\LinCodex\Models\Article;
@@ -18,7 +20,6 @@ use FinityLabs\LinCodex\Settings\CodexSettings;
 use FinityLabs\LinCodex\Sources\FilesystemSource;
 use FinityLabs\LinSupport\Locale\InstalledLocales;
 use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\DB;
 
 /*
  * CLI-01, the install half.
@@ -268,6 +269,23 @@ it('adds no note when shield skipped nothing', function () {
         ->and($output)->not->toContain('fin-codex registers its own');
 });
 
+it('names the article resource when it asks Shield to generate', function () {
+    TempAppTree::writePanelProvider('admin');
+    TempAppTree::writeShieldConfig();
+
+    finCodexShieldStubInstall(0, '');
+
+    [$exitCode] = finCodexRunCommand('fin-codex:install', ['--panel' => 'admin']);
+
+    // Shield 4 generates nothing for a run that names no entity: each of its
+    // generators is gated on --resource, --page, --widget or --all, and the
+    // bare run exits 0 with an empty summary, which used to pass for success.
+    expect($exitCode)->toBe(0)
+        ->and(ShieldStubInstallCommand::$shieldArgs)->toContain('--resource=ArticleResource')
+        ->and(ShieldStubInstallCommand::$shieldArgs)->toContain('--option=policies_and_permissions')
+        ->and(ShieldStubInstallCommand::$shieldArgs)->toContain('--panel=admin');
+});
+
 it('prints the output of a failed run and still falls back to the manual command', function () {
     TempAppTree::writePanelProvider('admin');
     TempAppTree::writeShieldConfig();
@@ -279,7 +297,7 @@ it('prints the output of a failed run and still falls back to the manual command
     expect($exitCode)->toBe(0)
         ->and($output)->toContain('SQLSTATE[42S02]')
         ->and($output)->toContain('Could not generate the Shield permissions automatically')
-        ->and($output)->toContain('php artisan shield:generate --panel=admin --option=policies_and_permissions')
+        ->and($output)->toContain('php artisan shield:generate --panel=admin --resource=ArticleResource --option=policies_and_permissions')
         // A run that failed configured nothing, so the next step that sends the
         // user to Shield's role screen is not offered.
         ->and($output)->not->toContain('Assign permissions');
@@ -363,17 +381,22 @@ it('imports the starter articles in the configured languages only, as database a
         ->and(config('lin-codex.sources.filesystem.paths'))->not->toContain(InstallCommand::starterDocsPath());
 });
 
+/**
+ * Teach the manifest one more text for one starter article, as if an earlier
+ * version had shipped it, for the rest of the test.
+ */
+function finCodexStarterManifestKnowing(string $slug, string $locale, string $title, ?string $excerpt, string $body): void
+{
+    $hash = StarterManifest::hash(new TranslationData($locale, $title, $excerpt, $body, null));
+
+    app()->instance(StarterManifest::class, (new StarterManifest)->with($slug, $locale, $hash));
+}
+
 it('refreshes a stale starter article on a repeated install and leaves an edited one alone', function () {
     TempAppTree::writePanelProvider('admin');
 
     finCodexRunCommand('fin-codex:install', ['--panel' => 'admin', '--locales' => 'en']);
     enableRevisions(true);
-
-    // The install was yesterday. Both stamps go back together, which is what
-    // the import leaves behind, and it puts the host's edit below a
-    // measurable distance later — the two columns hold whole seconds, so an
-    // edit made in the same second as the install would be unprovable.
-    ArticleTranslation::query()->update(['created_at' => now()->subDay(), 'updated_at' => now()->subDay()]);
 
     // The state an upgrade lands in, in one database: an article the host
     // has made their own, and an article nobody has touched since it was
@@ -382,14 +405,10 @@ it('refreshes a stale starter article on a repeated install and leaves an edited
 
     $stale = Article::query()->where('slug', 'help/writing-articles')->sole();
     $oldBody = "# Writing articles\n\nThe text an older version shipped.";
+    $row = $stale->translations()->where('locale', 'en')->sole();
 
-    ArticleTranslation::query()
-        ->where('article_id', $stale->id)
-        ->where('locale', 'en')
-        // updated_at is not fillable, and it has to go back to created_at:
-        // that pair is what says nothing has been written to the row since
-        // the import that created it.
-        ->update(['body' => $oldBody, 'updated_at' => DB::raw('created_at')]);
+    finCodexStarterManifestKnowing('help/writing-articles', 'en', $row->title, $row->excerpt, $oldBody);
+    $stale->translations()->where('locale', 'en')->update(['body' => $oldBody]);
 
     $before = [$stale->is_published, $stale->visibility, $stale->sort_order, $stale->contexts()->orderBy('id')->pluck('key')->all()];
 
@@ -414,6 +433,48 @@ it('refreshes a stale starter article on a repeated install and leaves an edited
         // A docs refresh moves the text and nothing else: not where the
         // article appears, not whether it appears, not in what order.
         ->and($after)->toBe($before);
+});
+
+it('refreshes the same article again on the next docs change, whatever its timestamps say', function () {
+    TempAppTree::writePanelProvider('admin');
+
+    finCodexRunCommand('fin-codex:install', ['--panel' => 'admin', '--locales' => 'en']);
+
+    $article = Article::query()->where('slug', 'help/coverage')->sole();
+    $row = $article->translations()->where('locale', 'en')->sole();
+
+    // Two docs versions in a row. Each older text is one the manifest knows,
+    // and every refresh moves updated_at past created_at — which is exactly
+    // the state a timestamp rule would have mistaken for a host edit.
+    foreach (['The 0.4 text.', 'The 0.5 text.'] as $older) {
+        finCodexStarterManifestKnowing('help/coverage', 'en', $row->title, $row->excerpt, $older);
+        $article->translations()->where('locale', 'en')->update(['body' => $older, 'updated_at' => now()->addMinute()]);
+
+        [$exitCode, $output] = finCodexRunCommand('fin-codex:install', ['--panel' => 'admin', '--locales' => 'en']);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('  Starter articles refreshed in en: help/coverage'.PHP_EOL)
+            ->and($output)->not->toContain('you have edited')
+            ->and($article->translations()->where('locale', 'en')->value('body'))->toBe(finCodexShippedBody('help/coverage', 'en'));
+    }
+});
+
+it('never touches a host article that only shares a starter slug', function () {
+    TempAppTree::writePanelProvider('admin');
+
+    // Written in the editor before the plugin was ever installed: saved once,
+    // so its timestamps look exactly like an import's.
+    $own = Article::factory()->withTranslation('en', ['title' => 'Our own help index', 'body' => 'Written here.'])->create(['slug' => 'help']);
+
+    [$exitCode, $output] = finCodexRunCommand('fin-codex:install', ['--panel' => 'admin', '--locales' => 'en,de']);
+
+    expect($exitCode)->toBe(0)
+        ->and($output)->toContain('  Starter articles you have edited, left as they are: help (en)'.PHP_EOL)
+        ->and($output)->not->toContain('refreshed in en: help,')
+        ->and($own->translations()->where('locale', 'en')->value('body'))->toBe('Written here.')
+        // No German is written beside an article that is not ours.
+        ->and($own->translations()->where('locale', 'de')->exists())->toBeFalse()
+        ->and(Article::query()->where('slug', 'help/coverage')->sole()->translations()->where('locale', 'de')->exists())->toBeTrue();
 });
 
 it('fills in a language configured after the install', function () {
@@ -473,16 +534,26 @@ it('attaches the starter articles to their pages whatever the default language i
         ->and(Article::query()->where('slug', 'help/help-in-code')->sole()->sort_order)->toBe(6);
 });
 
-it('stamps the installed panel onto the starter articles\' pages, and leaves them panel-less without one', function () {
+it('stamps the installed panel onto the help section only, and leaves everything panel-less without one', function () {
     TempAppTree::writePanelProvider('admin');
     TempAppTree::writePanelProvider('staff');
 
     finCodexRunCommand('fin-codex:install', ['--panel' => 'staff', '--locales' => 'en']);
 
-    $panels = ArticleContext::query()->pluck('panel_id')->unique()->all();
+    $panelOf = fn (string $slug): array => ArticleContext::query()
+        ->whereIn('article_id', Article::query()->where('slug', $slug)->pluck('id'))
+        ->pluck('panel_id')->unique()->all();
 
     expect(Article::query()->count())->toBe(12)
-        ->and($panels)->toBe(['staff'])
+        // The editor's manual is the staff panel's.
+        ->and($panelOf('help'))->toBe(['staff'])
+        ->and($panelOf('help/writing-articles'))->toBe(['staff'])
+        // The account section is bound to Filament's own auth pages, which
+        // every panel serves: it stays on any panel so the admin panel's login
+        // page gets the sign-in article too.
+        ->and($panelOf('account'))->toBe([])
+        ->and($panelOf('account/signing-in'))->toBe([null])
+        ->and($panelOf('account/your-profile'))->toBe([null])
         // The guest pages' articles are public, so a visitor to the staff login sees them.
         ->and(Article::query()->where('slug', 'account/signing-in')->sole()->visibility)->toBe(Visibility::Public);
 
@@ -591,6 +662,34 @@ it('declines a core config it does not recognise instead of guessing at it', fun
     expect($exitCode)->toBe(0)
         ->and($output)->toContain('Could not edit config/lin-codex.php')
         ->and((string) file_get_contents($path))->toBe($before);
+});
+
+it('declines a value it cannot read, such as an env() call, rather than cutting it at a comma', function () {
+    TempAppTree::writePanelProvider('admin');
+
+    $path = TempAppTree::linCodexConfigPath();
+    file_put_contents($path, str_replace('{{help_center}}', "env('CODEX_HELP_CENTER', '/help')", TempAppTree::LIN_CODEX_CONFIG));
+    config(['lin-codex.routes.help_center' => '/help']);
+
+    $before = (string) file_get_contents($path);
+
+    [$exitCode, $output] = finCodexRunCommand('fin-codex:install', ['--panel' => 'admin']);
+
+    expect($exitCode)->toBe(0)
+        ->and($output)->toContain('Could not edit config/lin-codex.php')
+        ->and((string) file_get_contents($path))->toBe($before);
+});
+
+it('rewrites a quoted prefix that itself holds a comma', function () {
+    TempAppTree::writePanelProvider('admin');
+    $path = TempAppTree::writeLinCodexConfig('/help,desk');
+    config(['lin-codex.routes.help_center' => '/help,desk']);
+
+    [$exitCode] = finCodexRunCommand('fin-codex:install', ['--panel' => 'admin']);
+
+    expect($exitCode)->toBe(0)
+        ->and((string) file_get_contents($path))->toContain("'help_center' => null,")
+        ->and((string) file_get_contents($path))->not->toContain('desk');
 });
 
 it('leaves the core config byte for byte when the switch is declined', function () {

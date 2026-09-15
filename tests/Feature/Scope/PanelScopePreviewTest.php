@@ -55,21 +55,6 @@ function finCodexScopePreviewGate(): PanelScopeGate
     return app(PanelScopeGate::class);
 }
 
-/**
- * The slugs the core admits for one viewer, sorted: the source's map through
- * ArticleGate::filter(), which is every read path's shared answer.
- *
- * @return list<string>
- */
-function finCodexScopePreviewSeen(Viewer $viewer): array
-{
-    $seen = array_keys(app(ArticleGate::class)->filter(app(ContentSource::class)->all(), $viewer));
-
-    sort($seen);
-
-    return $seen;
-}
-
 /** One published, public article, optionally carrying one stored context. */
 function finCodexScopePreviewArticle(string $slug, ?ContextType $type = null, string $key = '', ?string $panelId = null): Article
 {
@@ -130,8 +115,8 @@ it('answers for another panel although the viewer\'s grant would lift the rule',
 
     $viewer = Viewer::authenticated($user, 'web');
 
-    expect(finCodexScopePreviewSeen($viewer))->toBe(finCodexScopePreviewEverything())
-        ->and(finCodexScopePreviewGate()->preview('staff', fn (): array => finCodexScopePreviewSeen($viewer)))
+    expect(finCodexSeenSlugs($viewer))->toBe(finCodexScopePreviewEverything())
+        ->and(finCodexScopePreviewGate()->preview('staff', fn (): array => finCodexSeenSlugs($viewer)))
         ->toBe(finCodexScopePreviewOnStaff());
 });
 
@@ -145,7 +130,7 @@ it('answers for the current panel too, which the same grant would otherwise wide
 
     $viewer = Viewer::authenticated($user, 'web');
 
-    expect(finCodexScopePreviewGate()->preview('admin', fn (): array => finCodexScopePreviewSeen($viewer)))
+    expect(finCodexScopePreviewGate()->preview('admin', fn (): array => finCodexSeenSlugs($viewer)))
         ->toBe(finCodexScopePreviewOnAdmin());
 });
 
@@ -159,7 +144,7 @@ it('hands a null preview straight back to the normal rule', function (): void {
 
     $viewer = Viewer::authenticated($user, 'web');
 
-    expect(finCodexScopePreviewGate()->preview(null, fn (): array => finCodexScopePreviewSeen($viewer)))
+    expect(finCodexScopePreviewGate()->preview(null, fn (): array => finCodexSeenSlugs($viewer)))
         ->toBe(finCodexScopePreviewEverything());
 });
 
@@ -172,8 +157,8 @@ it('answers for a panel while no panel at all is current', function (): void {
     // Outside every panel the gate returns early. A preview is still a question
     // it has to answer: the asker is holding a panel id of its own, and the
     // absence of a current panel is not a reason to ignore it.
-    expect(finCodexScopePreviewSeen($viewer))->toBe(finCodexScopePreviewEverything())
-        ->and(finCodexScopePreviewGate()->preview('staff', fn (): array => finCodexScopePreviewSeen($viewer)))
+    expect(finCodexSeenSlugs($viewer))->toBe(finCodexScopePreviewEverything())
+        ->and(finCodexScopePreviewGate()->preview('staff', fn (): array => finCodexSeenSlugs($viewer)))
         ->toBe(finCodexScopePreviewOnStaff());
 });
 
@@ -189,11 +174,11 @@ it('gives a nested call its own panel and the outer one its panel back', functio
     $gate = finCodexScopePreviewGate();
 
     $answers = $gate->preview('admin', function () use ($gate, $viewer): array {
-        $inner = $gate->preview('staff', fn (): array => finCodexScopePreviewSeen($viewer));
+        $inner = $gate->preview('staff', fn (): array => finCodexSeenSlugs($viewer));
 
         // The outer preview is back in force here: not the normal rule, which
         // for this viewer would answer with everything, and not staff either.
-        return ['inner' => $inner, 'outer' => finCodexScopePreviewSeen($viewer)];
+        return ['inner' => $inner, 'outer' => finCodexSeenSlugs($viewer)];
     });
 
     expect($answers['inner'])->toBe(finCodexScopePreviewOnStaff())
@@ -216,9 +201,9 @@ it('is answering by the normal rule again on the very next read', function (): v
 
     $viewer = Viewer::authenticated($user, 'web');
 
-    expect(finCodexScopePreviewGate()->preview('staff', fn (): array => finCodexScopePreviewSeen($viewer)))
+    expect(finCodexScopePreviewGate()->preview('staff', fn (): array => finCodexSeenSlugs($viewer)))
         ->toBe(finCodexScopePreviewOnStaff())
-        ->and(finCodexScopePreviewSeen($viewer))->toBe(finCodexScopePreviewOnAdmin());
+        ->and(finCodexSeenSlugs($viewer))->toBe(finCodexScopePreviewOnAdmin());
 });
 
 it('is answering by the normal rule again after the callback throws', function (): void {
@@ -233,7 +218,7 @@ it('is answering by the normal rule again after the callback throws', function (
         throw new RuntimeException('inside the preview');
     }))->toThrow(RuntimeException::class, 'inside the preview');
 
-    expect(finCodexScopePreviewSeen($viewer))->toBe(finCodexScopePreviewOnAdmin());
+    expect(finCodexSeenSlugs($viewer))->toBe(finCodexScopePreviewOnAdmin());
 });
 
 it('changes nothing for a viewer already scoped to the panel being previewed', function (): void {
@@ -244,8 +229,8 @@ it('changes nothing for a viewer already scoped to the panel being previewed', f
 
     $viewer = Viewer::authenticated($user, 'web');
 
-    expect(finCodexScopePreviewSeen($viewer))->toBe(finCodexScopePreviewOnAdmin())
-        ->and(finCodexScopePreviewGate()->preview('admin', fn (): array => finCodexScopePreviewSeen($viewer)))
+    expect(finCodexSeenSlugs($viewer))->toBe(finCodexScopePreviewOnAdmin())
+        ->and(finCodexScopePreviewGate()->preview('admin', fn (): array => finCodexSeenSlugs($viewer)))
         ->toBe(finCodexScopePreviewOnAdmin());
 });
 
@@ -277,7 +262,7 @@ it('gathers what no panel claims, the general articles included', function (): v
     // panel-less url and route whose keys do resolve into a panel. The bucket
     // asks where a context lands, which is a different question from the one
     // the named-panel rule asks about the very same articles.
-    expect(finCodexScopePreviewGate()->preview(ContextPanels::OUTSIDE_PANELS, fn (): array => finCodexScopePreviewSeen($viewer)))
+    expect(finCodexScopePreviewGate()->preview(ContextPanels::OUTSIDE_PANELS, fn (): array => finCodexSeenSlugs($viewer)))
         ->toBe(['intro', 'plain-page', 'shop-url', 'unknown-class']);
 });
 
@@ -293,9 +278,9 @@ it('takes one context landing outside as enough, beside a panel\'s own', functio
     $viewer = Viewer::authenticated($user, 'web');
 
     // The article really does document both, so it answers to both options.
-    expect(finCodexScopePreviewGate()->preview(ContextPanels::OUTSIDE_PANELS, fn (): array => finCodexScopePreviewSeen($viewer)))
+    expect(finCodexScopePreviewGate()->preview(ContextPanels::OUTSIDE_PANELS, fn (): array => finCodexSeenSlugs($viewer)))
         ->toBe(['mixed'])
-        ->and(finCodexScopePreviewGate()->preview('admin', fn (): array => finCodexScopePreviewSeen($viewer)))
+        ->and(finCodexScopePreviewGate()->preview('admin', fn (): array => finCodexSeenSlugs($viewer)))
         ->toBe(['mixed']);
 });
 
@@ -310,7 +295,7 @@ it('leaves a pinned article out of it whatever its key would resolve into', func
 
     // One key, two articles: the prefix is what decides, because a context that
     // names a panel resolves into that panel and never into nothing.
-    expect(finCodexScopePreviewGate()->preview(ContextPanels::OUTSIDE_PANELS, fn (): array => finCodexScopePreviewSeen($viewer)))
+    expect(finCodexScopePreviewGate()->preview(ContextPanels::OUTSIDE_PANELS, fn (): array => finCodexSeenSlugs($viewer)))
         ->toBe(['plain-page']);
 });
 
@@ -326,6 +311,6 @@ it('leaves out an article bound to a class some panel registers', function (): v
     // The forClass() expectation fails loudly if the fixture panels ever stop
     // registering the dashboard, which would leave the row proving nothing.
     expect(app(ContextPanels::class)->forClass(Dashboard::class))->not->toBe([])
-        ->and(finCodexScopePreviewGate()->preview(ContextPanels::OUTSIDE_PANELS, fn (): array => finCodexScopePreviewSeen($viewer)))
+        ->and(finCodexScopePreviewGate()->preview(ContextPanels::OUTSIDE_PANELS, fn (): array => finCodexSeenSlugs($viewer)))
         ->toBe(['plain-page']);
 });

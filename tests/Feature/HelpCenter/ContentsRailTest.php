@@ -24,9 +24,10 @@ use Livewire\Livewire;
  * Filament's own expand-section window event instead; the dispatcher has to
  * render AFTER the sections, because Alpine initialises in document order.
  *
- * Helpers are file-local and finCodexHelpTree*-prefixed. Pest "global" helpers
- * only exist for the files a run loads, so a single-file run of this file cannot
- * see a sibling test file's functions.
+ * Helpers are file-local and finCodexHelpTree*-prefixed. A sibling test file's
+ * functions only exist when that file is loaded, so a single-file run cannot
+ * see them; anything two files need lives in tests/Pest.php, which every run
+ * loads.
  */
 
 /**
@@ -36,7 +37,7 @@ use Livewire\Livewire;
  */
 function finCodexHelpTreeUser(string $email = 'tree@example.com'): User
 {
-    $user = User::firstOrCreate(['email' => $email], ['name' => 'Reader']);
+    $user = finCodexUser($email, 'Reader');
 
     test()->actingAs($user, 'web');
 
@@ -294,8 +295,7 @@ it('renders an article that has children as a collapsible section headed by its 
         ->toContain(finCodexHelpTreePersistKey('fin-codex-help-account'))
         // The heading IS the link: the label opens the article, and the chevron
         // beside it is a real disclosure button for the children.
-        ->and($header)->toContain('fi-section-header-heading')
-        ->toContain('href="'.$url.'"')
+        ->and($header)->toContain('href="'.$url.'"')
         ->toContain('aria-expanded')
         ->toContain('aria-controls="fin-codex-help-account-content"')
         // Filament's own header toggle sits on the element around the heading,

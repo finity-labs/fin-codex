@@ -3,9 +3,7 @@
 use Filament\Facades\Filament;
 use FinityLabs\FinCodex\Scope\PanelScopeGate;
 use FinityLabs\FinCodex\Tests\Fixtures\User;
-use FinityLabs\LinCodex\Auth\ArticleGate;
 use FinityLabs\LinCodex\Auth\Viewer;
-use FinityLabs\LinCodex\Contracts\ContentSource;
 use FinityLabs\LinCodex\Data\ArticleData;
 use FinityLabs\LinCodex\Enums\ContextType;
 use FinityLabs\LinCodex\Models\Article;
@@ -45,16 +43,6 @@ function finCodexBootArticle(string $slug, ?ContextType $type = null, string $ke
     return $factory->create(['slug' => $slug]);
 }
 
-/** @return list<string> */
-function finCodexBootSeen(Viewer $viewer): array
-{
-    $seen = array_keys(app(ArticleGate::class)->filter(app(ContentSource::class)->all(), $viewer));
-
-    sort($seen);
-
-    return $seen;
-}
-
 it('installs the hook when a fin-codex panel boots', function (): void {
     expect(config('lin-codex.auth.gate'))->toBeNull();
 
@@ -76,7 +64,7 @@ it('keeps a host hook as the inner one, and both vetoes apply', function (): voi
 
     expect(config('lin-codex.auth.gate'))->toBe(PanelScopeGate::class)
         ->and(app(PanelScopeGate::class)->inner())->toBe($closure)
-        ->and(finCodexBootSeen(Viewer::authenticated($user, 'staff')))->toBe(['staff-guide']);
+        ->and(finCodexSeenSlugs(Viewer::authenticated($user, 'staff')))->toBe(['staff-guide']);
 });
 
 it('wraps once however often the panel boots', function (): void {

@@ -26,7 +26,7 @@ use Illuminate\Database\Eloquent\Builder;
  * authenticated article becomes readable by guests the moment the
  * authenticated article is gone. exposesPublicChildren is that warning,
  * and exposedDescendants() the exact list ArticleWriter::delete() flips to
- * Authenticated when the panel user asks it to (EDIT-10).
+ * Authenticated when the panel user asks it to.
  *
  * The LIKE prefix needs no escaping: slugs are slash-separated kebab-case
  * segments, so "users/%" cannot catch "users-guide".

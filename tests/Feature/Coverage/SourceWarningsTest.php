@@ -184,20 +184,23 @@ it('follows the locale through the core\'s own translation', function (): void {
         ->and($german['lines'][0]['message'])->toContain('verworfen');
 });
 
-it('reads the source once per request and re-reads once the memo is dropped', function (): void {
+it('reads the source once per request and re-reads after a write in the same request', function (): void {
     $warnings = app(SourceWarnings::class);
     $first = $warnings->all();
 
     expect(app(SourceWarnings::class))->toBe($warnings)
         ->and($warnings->all())->toBe($first);
 
+    // A write through the models drops the memo, so the same instance sees
+    // the warning the new article resolves, in the same request.
     finCodexWarningArticle('users');
 
-    expect($warnings->all())->toBe($first);
+    expect($warnings->count())->toBeLessThan(count($first));
 
     forgetHelpMemo();
 
-    expect(app(SourceWarnings::class)->count())->toBeLessThan(count($first));
+    expect(app(SourceWarnings::class))->not->toBe($warnings)
+        ->and(app(SourceWarnings::class)->count())->toBeLessThan(count($first));
 });
 
 it('reports nothing at all on a healthy installation', function (): void {

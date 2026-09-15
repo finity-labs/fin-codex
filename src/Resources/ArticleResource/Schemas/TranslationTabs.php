@@ -112,7 +112,7 @@ final class TranslationTabs
     /**
      * The configured languages and the default locale. Read from settings,
      * falling back to the packaged defaults when the settings row is not
-     * there yet (a fresh install before Phase 6's settings page saves one) or
+     * there yet (a fresh install before the settings page saves one) or
      * the table does not exist.
      *
      * @return array{languages: list<array{code: string, display: string, 'flag-icon': string}>, default: string}

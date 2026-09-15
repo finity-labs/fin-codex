@@ -56,16 +56,6 @@ function finCodexSpaNavigateAnchors(string $html): int
     return preg_match_all('/<a[^>]*\\swire:navigate[\\s>]/', $html);
 }
 
-/**
- * @return list<string>
- */
-function finCodexSpaExceptions(ViewManager $view): array
-{
-    $property = new ReflectionProperty($view, 'spaModeUrlExceptions');
-
-    return array_values($property->getValue($view));
-}
-
 it('excludes the help center from SPA navigation once the plugin boots on a SPA panel', function (): void {
     Filament::getPanel('admin')->spa();
     $this->usesPanel('admin', finCodexSpaUser());

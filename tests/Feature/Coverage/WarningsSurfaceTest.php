@@ -128,8 +128,7 @@ it('renders collapsed, with the amber icon and nothing else amber about it', fun
 
     $section = finCodexSurfaceSection(Livewire::test(AdminHelpCoverage::class)->html());
 
-    expect($section)->toContain('fi-collapsible')
-        ->and($section)->toContain('isCollapsed: true')
+    expect($section)->toContain('isCollapsed: true')
         ->and($section)->toContain('aria-expanded="false"')
         ->and($section)->toContain('x-cloak')
         ->and($section)->toContain('fi-color-warning');

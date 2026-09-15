@@ -6,7 +6,6 @@ namespace FinityLabs\FinCodex\Resources\ArticleResource\Actions;
 
 use Filament\Actions\DeleteAction;
 use Filament\Support\Exceptions\Halt;
-use FinityLabs\FinCodex\Auth\ArticleAbility;
 use FinityLabs\FinCodex\Editor\MediaReferences;
 use FinityLabs\FinCodex\Resources\ArticleResource\RelationManagers\MediaRelationManager;
 use FinityLabs\LinCodex\Models\Article;
@@ -44,11 +43,7 @@ final class DeleteMediaAction
     public static function make(): DeleteAction
     {
         return DeleteAction::make()
-            ->authorize(static function (MediaRelationManager $livewire): bool {
-                $owner = $livewire->getOwnerRecord();
-
-                return $owner instanceof Article && ArticleAbility::allows('update', $owner);
-            })
+            ->authorize(static fn (MediaRelationManager $livewire): bool => MediaRelationManager::mayManageMediaOf($livewire->getOwnerRecord()))
             ->modalHeading(static fn (Media $record): string => (string) __(
                 'fin-codex::fin-codex.media.delete.heading',
                 ['name' => $record->name],

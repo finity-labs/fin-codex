@@ -338,8 +338,8 @@ class FinCodexPlugin implements Plugin
      * the class already in place and add nothing. A host hook configured
      * before us is kept as the inner hook and runs first. Set here rather
      * than in register(): register() runs for every panel at provider boot,
-     * boot() for the panel Filament serves, which is the Phase 13 precedent
-     * for lin-codex.routes.help_center. The gate reads the current panel at
+     * boot() for the panel Filament serves, the same split the write of
+     * lin-codex.routes.help_center follows. The gate reads the current panel at
      * call time, so a request outside every panel keeps the core's answer.
      */
     private function bootPanelScope(): void
@@ -499,7 +499,7 @@ class FinCodexPlugin implements Plugin
 
     /**
      * false removes the topbar button only; the drawer, its shortcut and
-     * (Phase 4) field hints stay.
+     * the field hints stay.
      */
     public function helpButton(bool|Closure $condition = true): static
     {

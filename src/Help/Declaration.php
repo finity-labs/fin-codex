@@ -11,7 +11,7 @@ use FinityLabs\LinCodex\Data\ContextData;
  * it was asked for, the slug, its position in that class's answer (0 is the
  * best article) and the synthetic contexts that stand for it, all scoped to
  * that panel. The ContentSource decorator folds the contexts into the article;
- * Phase 5's editor lists the triple read-only as "declared in code".
+ * The editor lists the triple read-only as "declared in code".
  */
 final readonly class Declaration
 {

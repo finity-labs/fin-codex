@@ -2,6 +2,7 @@
 
 use Filament\Facades\Filament;
 use Filament\Http\Middleware\IdentifyTenant;
+use Filament\Panel;
 use Filament\Support\View\ViewManager;
 use FinityLabs\FinCodex\FinCodexPlugin;
 use FinityLabs\FinCodex\Panel\RefreshHelpCenterPrefix;
@@ -50,20 +51,6 @@ function finCodexHelpCenterPrefixPlugin(string $panelId = 'admin'): FinCodexPlug
     return $plugin;
 }
 
-/**
- * The SPA URL exception list, which the manager keeps private and exposes
- * only through hasSpaMode(). Read directly so a row can count entries rather
- * than only ask whether one matches.
- *
- * @return list<string>
- */
-function finCodexHelpCenterPrefixExceptions(ViewManager $view): array
-{
-    $property = new ReflectionProperty($view, 'spaModeUrlExceptions');
-
-    return array_values($property->getValue($view));
-}
-
 it("writes the booted panel's own help center into the core's prefix", function (string $panel, string $prefix): void {
     $this->usesPanel($panel, finCodexHelpCenterPrefixUser());
 
@@ -105,21 +92,28 @@ it('keeps SPA navigation on everywhere but the help center when the published pr
 
     expect($view->hasSpaMode('/admin/users'))->toBeTrue()
         ->and($view->hasSpaMode('/admin/help/x'))->toBeFalse()
-        ->and(finCodexHelpCenterPrefixExceptions($view))->toBe(['/admin/help/*']);
+        ->and(finCodexSpaExceptions($view))->toBe(['/admin/help/*']);
 });
 
 it('adds no exception at all while the prefix is blank', function (): void {
     Filament::getPanel('admin')->spa();
-    $panel = $this->usesPanel('admin', finCodexHelpCenterPrefixUser());
+    $this->usesPanel('admin', finCodexHelpCenterPrefixUser());
+
+    // A panel built here has no registered routes, so no help-center URL can
+    // be built for it and the boot-time write is skipped — the state a
+    // tenanted panel is in at boot. Booting its plugin must then except
+    // nothing from SPA navigation, rather than a pattern matching every URL.
+    $plugin = FinCodexPlugin::make();
+    $panel = Panel::make()->id('blank')->path('blank')->spa()->plugin($plugin);
+    config(['lin-codex.routes.help_center' => null]);
 
     $view = app(ViewManager::class);
-    $before = finCodexHelpCenterPrefixExceptions($view);
-    $plugin = finCodexHelpCenterPrefixPlugin();
+    $before = finCodexSpaExceptions($view);
 
-    config(['lin-codex.routes.help_center' => null]);
-    (new ReflectionMethod($plugin, 'bootSpaExceptions'))->invoke($plugin, $panel);
+    $plugin->boot($panel);
 
-    expect(finCodexHelpCenterPrefixExceptions($view))->toBe($before)
+    expect(config('lin-codex.routes.help_center'))->toBeNull()
+        ->and(finCodexSpaExceptions($view))->toBe($before)
         ->and($view->hasSpaMode('/anything/at/all'))->toBeTrue();
 });
 
@@ -128,14 +122,14 @@ it('writes the same value and one exception across repeated boots', function ():
     $this->usesPanel('admin', finCodexHelpCenterPrefixUser());
 
     $view = app(ViewManager::class);
-    $before = finCodexHelpCenterPrefixExceptions($view);
+    $before = finCodexSpaExceptions($view);
 
     Filament::getPanel('admin')->boot();
     Filament::getPanel('admin')->boot();
 
     expect(config('lin-codex.routes.help_center'))->toBe('/admin/help')
-        ->and(array_count_values(finCodexHelpCenterPrefixExceptions($view))['/admin/help/*'] ?? 0)->toBe(1)
-        ->and(finCodexHelpCenterPrefixExceptions($view))->toBe($before);
+        ->and(array_count_values(finCodexSpaExceptions($view))['/admin/help/*'] ?? 0)->toBe(1)
+        ->and(finCodexSpaExceptions($view))->toBe($before);
 });
 
 /*
@@ -172,7 +166,7 @@ it('rewrites the prefix from whatever panel is current when it runs', function (
 
     expect($returned)->toBe('next')
         ->and(config('lin-codex.routes.help_center'))->toBe('/staff/help')
-        ->and(finCodexHelpCenterPrefixExceptions(app(ViewManager::class)))
+        ->and(finCodexSpaExceptions(app(ViewManager::class)))
         ->toContain('/admin/help/*')
         ->toContain('/staff/help/*');
 });

@@ -1,0 +1,137 @@
+{
+    "account": {
+        "de": [
+            "3ddc4a3fb0659c61956bcd90af7076839616a532"
+        ],
+        "en": [
+            "9c616ce72e8e52f86e57a8b768f6b02bb924f0b7"
+        ],
+        "hu": [
+            "013462a6578b81a755fdb796973ee3baae6dc910"
+        ]
+    },
+    "account/creating-an-account": {
+        "de": [
+            "95f1c6532a61de85ca4aedf188fafbf54fde6cae"
+        ],
+        "en": [
+            "a0850d4d33e14953e863a72542a0500dbe6a07c0"
+        ],
+        "hu": [
+            "388c3a818b846349b8939185ad25ceeec6828b7b"
+        ]
+    },
+    "account/forgotten-password": {
+        "de": [
+            "3fca5d39ed4620c6141b8d4df7a4307b58a73bab"
+        ],
+        "en": [
+            "b7f79c94e4c4819eb5706baba1f53bbd6685e40f"
+        ],
+        "hu": [
+            "d435d801169daae486fb4d9f1dbbf107617cb535"
+        ]
+    },
+    "account/signing-in": {
+        "de": [
+            "66438e355774c0db8c2b5be297b4ef2242b6cebd"
+        ],
+        "en": [
+            "689eb44b41f4cb7cc3c20a74e799f70733f3e333"
+        ],
+        "hu": [
+            "79919c297de792b1220575397d4d4931de01ab6a"
+        ]
+    },
+    "account/verifying-your-email": {
+        "de": [
+            "8355b739a24e04b9c4766383a8cae38476792f73"
+        ],
+        "en": [
+            "5ea329022cb3fd2f5858b4103140783c46f5eef7"
+        ],
+        "hu": [
+            "d8ea06fff189f4abd5e2a64e5125cae9a2ea9e3e"
+        ]
+    },
+    "account/your-profile": {
+        "de": [
+            "b2ba911c36eb8997e9c2a5dfff7c4d5dda19bc2d"
+        ],
+        "en": [
+            "fa514fa3062f181ed080be401685a69b28c9eecb"
+        ],
+        "hu": [
+            "e1757176f45415ae9dd1805370769b993ae65594"
+        ]
+    },
+    "help": {
+        "de": [
+            "0fe52eec4ca079037c82c9289781e82c2298b497",
+            "a2bd4a0dbef9108c371a3b633474b690907fd165"
+        ],
+        "en": [
+            "71758964da963bd4dd44448006e066f941e0a074",
+            "2f6ed3ab3887f61b579df48b5275c1e5beabb835"
+        ],
+        "hu": [
+            "79ccfe7d56fe8e7e04d158e91b172ff99f60a58e",
+            "77cb180f16c332127a0a72d4ab6eb3ef90bfeb07"
+        ]
+    },
+    "help/coverage": {
+        "de": [
+            "0501b39eaff74e7f5533fe7fb62ec5bf913ed474"
+        ],
+        "en": [
+            "289131cd5f3e4f7faea4273a9a1dd611c59e4030"
+        ],
+        "hu": [
+            "51b1d16ad56f2a1504dd90d5832f577c65d02bfc"
+        ]
+    },
+    "help/help-center": {
+        "de": [
+            "0259bc55d4791eb2e741b03adcf74d5c39409ab7"
+        ],
+        "en": [
+            "557f57c9754f4013c62cf76043681f566c36cc54"
+        ],
+        "hu": [
+            "0d991e901de6035acd7fb77eea0fa7a6a8ff9030"
+        ]
+    },
+    "help/help-in-code": {
+        "de": [
+            "abe34015dd26118e8d7d0b41be25ce37d41fdee4"
+        ],
+        "en": [
+            "d17ba5e875b0733068e154cbce8f44a1174c56ad"
+        ],
+        "hu": [
+            "a8f9380359eaec70f3cf0c656dbdbec9c76d554d"
+        ]
+    },
+    "help/settings": {
+        "de": [
+            "3c45c2cb4133b732657452c52528fc1521b7d9e7"
+        ],
+        "en": [
+            "0e951252bbbf44e24cdb3672a421fff90126d342"
+        ],
+        "hu": [
+            "e8d40c13c8bb7a164a781f945e5345eac72fed09"
+        ]
+    },
+    "help/writing-articles": {
+        "de": [
+            "adb3207eeac3ed115dea008c88100f79075a0592"
+        ],
+        "en": [
+            "cae47307c050342fac37424ae1260645670b4e7a"
+        ],
+        "hu": [
+            "c198fdd649f514089ec31d6cab244add8a8508ed"
+        ]
+    }
+}

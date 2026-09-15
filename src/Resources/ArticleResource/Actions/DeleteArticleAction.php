@@ -25,9 +25,8 @@ use Illuminate\Contracts\View\View;
  *
  * One consequence is not merely informative. Deleting an *authenticated*
  * article leaves its published, public descendants under a folder group, and
- * a folder group hides nothing, so guests can suddenly read them. EDIT-10
- * says that must not happen by accident, and the note alone would not stop
- * it. The keep_hidden checkbox is the reconciliation: it appears only when
+ * a folder group hides nothing, so guests can suddenly read them. That must
+ * not happen by accident, and the note alone would not stop it. The keep_hidden checkbox is the reconciliation: it appears only when
  * the situation applies, it is on by default, and ArticleWriter::delete()
  * flips exactly DeleteSummary::exposedDescendants() to Authenticated inside
  * the delete transaction. Unticking it is the admin saying they meant to

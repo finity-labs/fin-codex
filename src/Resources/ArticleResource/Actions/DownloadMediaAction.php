@@ -7,9 +7,7 @@ namespace FinityLabs\FinCodex\Resources\ArticleResource\Actions;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Support\Icons\Heroicon;
-use FinityLabs\FinCodex\Auth\ArticleAbility;
 use FinityLabs\FinCodex\Resources\ArticleResource\RelationManagers\MediaRelationManager;
-use FinityLabs\LinCodex\Models\Article;
 use FinityLabs\LinCodex\Models\Media;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -35,11 +33,7 @@ final class DownloadMediaAction
             ->icon(Heroicon::OutlinedArrowDownTray)
             ->iconButton()
             ->color('gray')
-            ->authorize(static function (MediaRelationManager $livewire): bool {
-                $owner = $livewire->getOwnerRecord();
-
-                return $owner instanceof Article && ArticleAbility::allows('update', $owner);
-            })
+            ->authorize(static fn (MediaRelationManager $livewire): bool => MediaRelationManager::mayManageMediaOf($livewire->getOwnerRecord()))
             ->action(static function (Media $record): ?StreamedResponse {
                 $exists = rescue(fn (): bool => Storage::disk($record->disk)->exists($record->path), false, report: false);
 

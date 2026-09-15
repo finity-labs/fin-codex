@@ -43,7 +43,7 @@ use FinityLabs\LinCodex\Translation\MissingTranslations;
  * - the ability. update on the row's article, through ArticleAbility and the
  *   closure form of authorize, never the string form: Filament unshifts the
  *   action's own record as the gate subject, so only a Closure is gated
- *   against the row it sits on (Phase 8's finding).
+ *   against the row it sits on.
  * - something to translate into. MissingTranslations::for() on the same one
  *   instance the table resolved for the whole build, whose candidates are
  *   memoised, so the per-row verdict costs neither a settings query nor a

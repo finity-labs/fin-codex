@@ -365,10 +365,8 @@ it('attaches the screen to an article the admin already has, and the row goes gr
     expect(finCodexActionsContexts($article))->toBe(['admin:class:'.UserResource::class])
         ->and($article->fresh()->updated_by)->toBe($user->id);
 
-    // The report memoises one reading of the source per request, so the row
-    // flips on the next render, not inside this one.
-    forgetHelpMemo();
-
+    // No forgetHelpMemo() here on purpose: the write itself drops the report's
+    // memo, so the row flips in the very render the attach triggers.
     $row = finCodexActionsRecords(finCodexActionsPage())[$key];
 
     expect($row['covered'])->toBeTrue()

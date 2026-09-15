@@ -58,6 +58,12 @@ final class SourceWarnings
         return $this->memo;
     }
 
+    /** Drop the memo, so the next read sees a write made earlier in this request. */
+    public function forget(): void
+    {
+        $this->memo = null;
+    }
+
     public function count(): int
     {
         return count($this->all());

@@ -24,7 +24,7 @@ use Illuminate\Support\Str;
  * core's help-center URL (ArticlePath::href(), the heading as the fragment).
  * Its Alpine click handler dispatches the window event codex:open with
  * { slug, heading } and calls preventDefault only when a drawer
- * ([data-codex-drawer]) is on the page, so the Phase 2 drawer's openFrom()
+ * ([data-codex-drawer]) is on the page, so the drawer's openFrom()
  * opens the article and scrolls to the heading with no server round trip;
  * without a drawer the browser follows the link in the same tab. Because
  * the handler is non-blank, Filament renders no wire:click for the action.

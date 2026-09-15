@@ -48,7 +48,7 @@ use Spatie\LaravelSettings\Exceptions\MissingSettings;
  * The number this produces is therefore NOT `codex:coverage`'s exit-code
  * number: the console counts routes and credits only what report() matched,
  * this counts screens and additionally credits a resource-class context. The
- * README says so (Phase 8).
+ * README says so.
  *
  * Which panel a row belongs to is not decided here: Scope\ContextPanels
  * answers that, so the coverage page, the panel scope gate and the Help
@@ -93,6 +93,12 @@ final class CoverageReport
         }
 
         return $this->memo;
+    }
+
+    /** Drop the memo, so the next read sees a write made earlier in this request. */
+    public function forget(): void
+    {
+        $this->memo = null;
     }
 
     /** Uncovered rows of one panel — the badge number, and the default view's count. */

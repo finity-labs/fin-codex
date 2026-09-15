@@ -8,6 +8,7 @@ use FinityLabs\FinCodex\Ai\AiSettings;
 use FinityLabs\FinCodex\Commands\Concerns\EditsCoreConfig;
 use FinityLabs\FinCodex\FinCodexPlugin;
 use FinityLabs\FinCodex\Resources\ArticleResource;
+use FinityLabs\FinCodex\Starter\StarterManifest;
 use FinityLabs\FinSupport\Console\Concerns\DiscoversPanelProviders;
 use FinityLabs\FinSupport\Console\Concerns\EditsPanelProviders;
 use FinityLabs\FinSupport\Console\Concerns\EditsShieldConfig;
@@ -359,8 +360,10 @@ class InstallCommand extends Command
      * "account" section — public because the core hides an article whose
      * ancestor the viewer may not read, so a guest on the sign-in page only
      * sees an article whose whole path is public. Each carries the context
-     * of the page it describes and the panel it was installed on, so those
-     * pages have help from the first day.
+     * of the page it describes; the help section also carries the panel it
+     * was installed on, while the account section is left on any panel so
+     * every panel's login page gets it. Those pages have help from the first
+     * day.
      *
      * Only the configured languages are kept, and only when at least one of
      * them is a language the articles exist in — an install in French alone
@@ -373,9 +376,10 @@ class InstallCommand extends Command
      * The second state, the one an upgrade lands in: the database already
      * holds these slugs, so the importer skips them and this version's
      * rewritten docs would never reach the reader. Those skipped slugs go to
-     * refreshStarterArticles(), which corrects the ones nobody has written to
-     * since they were imported, fills in a language configured after the
-     * install, and names — without touching — the ones the host has edited.
+     * refreshStarterArticles(), which corrects the ones that still carry a
+     * text some version of this package shipped, fills in a language
+     * configured after the install, and names — without touching — the ones
+     * the host has edited.
      * That last refusal is absolute: there is no flag and no prompt that
      * overwrites an article the host has made their own, and --force on this
      * command means published files, nothing else. Only title, excerpt and
@@ -431,13 +435,21 @@ class InstallCommand extends Command
             ArticleTranslation::query()->whereIn('article_id', $imported)->whereNotIn('locale', $locales)->delete();
             Article::query()->whereIn('id', $imported)->update(['source_path' => null]);
 
-            // The articles describe this panel's screens, so they belong to
-            // this panel: a second panel carrying the plugin — a customer
-            // portal, say — must not offer its users the editor's manual.
-            // Without a registered panel they stay "any panel"; an admin
-            // widens or narrows a context in the editor either way.
+            // The help section describes this panel's editor, so it belongs
+            // to this panel: a second panel carrying the plugin — a customer
+            // portal, say — must not offer its users the editor's manual. The
+            // account section stays "any panel" on purpose: it is bound to
+            // Filament's own sign-in, register, password and profile pages,
+            // which every panel serves and no panel registers, and naming
+            // one panel would hide it on every other panel's login page.
+            // Without a registered panel everything stays "any panel"; an
+            // admin widens or narrows a context in the editor either way.
             if ($this->panelId !== null) {
-                ArticleContext::query()->whereIn('article_id', $imported)->whereNull('panel_id')->update(['panel_id' => $this->panelId]);
+                $helpSection = Article::query()->whereIn('id', $imported)->where(function ($query): void {
+                    $query->where('slug', 'help')->orWhere('slug', 'like', 'help/%');
+                })->pluck('id');
+
+                ArticleContext::query()->whereIn('article_id', $helpSection)->whereNull('panel_id')->update(['panel_id' => $this->panelId]);
             }
         }
 
@@ -485,26 +497,29 @@ class InstallCommand extends Command
      * The importer leaves an existing slug alone, which is right — the
      * article belongs to the host once it is in the database — but it also
      * means a host who installed before a docs rewrite never sees the new
-     * text. Per slug and configured language there are four cases:
+     * text. The question per slug and configured language is whether the
+     * stored text is one this package shipped at some point, which is what
+     * the starter manifest (Starter\StarterManifest) answers:
      *
-     * 1. the stored row already carries the shipped text: nothing to do, and
+     * 1. the row carries the text this version ships: nothing to do, and
      *    nothing to say about it;
-     * 2. it differs, and the row's updated_at still equals its created_at, so
-     *    nothing has been written to it since the import that created it:
-     *    refresh it;
-     * 3. it differs and was written later: the host wrote it, so it is only
+     * 2. the row carries a text an earlier version shipped: refresh it;
+     * 3. the row carries anything else: the host wrote it, so it is only
      *    named, never touched;
-     * 4. there is no row at all in a configured language: fill it in, which
-     *    is how a language added after the install finally gets the starter
-     *    set.
+     * 4. there is no row in a configured language: fill it in, which is how
+     *    a language added after the install finally gets the starter set.
      *
-     * The two timestamps come from the translation row and never from the
-     * article: the install's own post-import step writes codex_articles, so
-     * an article's updated_at says nothing about whether anyone edited its
-     * text. Case 3 is deliberately generous — an AI translation, a hand edit,
-     * even a re-save that changed nothing all move updated_at, and all are
-     * left alone. A row missing either timestamp cannot be shown untouched
-     * and is treated as the host's.
+     * The manifest, not the timestamps, decides — a save moves updated_at,
+     * the refresh's own included, so a timestamp rule could refresh a row
+     * once and never again. Case 3 is deliberately generous: an AI
+     * translation, a hand edit, even a wording change of one letter all
+     * leave a text the package never shipped, and all are left alone.
+     *
+     * An article whose rows carry no shipped text in any language is not a
+     * starter article at all as far as this command can tell — a host may
+     * have written an article of their own under one of these slugs before
+     * installing — so it is named and left whole, and no language is filled
+     * in beside it.
      *
      * The comparison is byte-exact against the core's own read of the shipped
      * Markdown, which is safe because the importer stores those three values
@@ -526,6 +541,7 @@ class InstallCommand extends Command
     {
         $refreshed = [];
         $edited = [];
+        $manifest = app(StarterManifest::class);
 
         $articles = Article::query()->whereIn('slug', $slugs)->get()->keyBy('slug');
 
@@ -539,9 +555,10 @@ class InstallCommand extends Command
 
             $rows = ArticleTranslation::query()
                 ->where('article_id', $article->id)
-                ->whereIn('locale', $locales)
                 ->get()
                 ->keyBy('locale');
+
+            $isStarter = $rows->contains(fn (ArticleTranslation $row): bool => $manifest->knows($slug, $row->locale, StarterManifest::hash($row)));
 
             /** @var array<string, TranslationData> $stale */
             $stale = [];
@@ -562,13 +579,13 @@ class InstallCommand extends Command
                     continue;
                 }
 
-                if ($row->title === $translation->title
-                    && $row->excerpt === $translation->excerpt
-                    && $row->body === $translation->body) {
+                $hash = StarterManifest::hash($row);
+
+                if ($hash === StarterManifest::hash($translation)) {
                     continue;
                 }
 
-                if ($this->isUntouchedSinceImport($row)) {
+                if ($isStarter && $manifest->knows($slug, $locale, $hash)) {
                     $stale[$locale] = $translation;
                 } else {
                     $theirs[] = $locale;
@@ -579,7 +596,7 @@ class InstallCommand extends Command
                 $edited[$slug] = $theirs;
             }
 
-            if ($stale === []) {
+            if ($stale === [] || ! $isStarter) {
                 continue;
             }
 
@@ -599,25 +616,6 @@ class InstallCommand extends Command
         }
 
         return ['refreshed' => $refreshed, 'edited' => $edited];
-    }
-
-    /**
-     * A translation row nothing has been written to since the import that
-     * created it. Laravel stamps both timestamps from one value on insert,
-     * so on this table they are still equal exactly when no later save has
-     * touched the row.
-     *
-     * The two columns hold whole seconds, which leaves one blind spot: an
-     * edit made in the same second as the install still reads as untouched.
-     * A host editing an article a second after installing it is not a case
-     * worth carrying a second column for.
-     */
-    protected function isUntouchedSinceImport(ArticleTranslation $translation): bool
-    {
-        $created = $translation->created_at;
-        $updated = $translation->updated_at;
-
-        return $created !== null && $updated !== null && $updated->equalTo($created);
     }
 
     /**
@@ -710,7 +708,7 @@ class InstallCommand extends Command
 
         if (! $this->hasCommand('shield:generate')) {
             $this->components->warn('shield:generate is not available. Run it yourself once Shield is installed:');
-            $this->line("  php artisan shield:generate{$panelFlag} --option=policies_and_permissions --ignore-existing-policies");
+            $this->line("  php artisan shield:generate{$panelFlag} --resource=ArticleResource --option=policies_and_permissions --ignore-existing-policies");
             $this->line("  php artisan shield:generate{$panelFlag} --page=HelpSettings,HelpCoverage,HelpCenter");
 
             return;
@@ -718,8 +716,13 @@ class InstallCommand extends Command
 
         $this->comment('Generating Shield permissions and policies for the Codex article resource...');
 
+        // Shield 4 generates nothing unless it is told what for: every one of
+        // its generators is gated on --resource, --page, --widget or --all, and
+        // a run that names none exits 0 with an empty summary. Naming the
+        // resource is what makes this run produce the article permissions.
         $args = [
             PHP_BINARY, 'artisan', 'shield:generate',
+            '--resource=ArticleResource',
             '--option=policies_and_permissions',
             '--ignore-existing-policies',
             '--no-interaction',
@@ -742,7 +745,7 @@ class InstallCommand extends Command
             }
         } else {
             $this->components->warn('Could not generate the Shield permissions automatically. Run manually:');
-            $this->line("  php artisan shield:generate{$panelFlag} --option=policies_and_permissions --ignore-existing-policies");
+            $this->line("  php artisan shield:generate{$panelFlag} --resource=ArticleResource --option=policies_and_permissions --ignore-existing-policies");
         }
 
         // Pages are discovered, not configured, so they are a separate run. The
