@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.5.3] - 2026-09-16
+
+### Changed
+
+- The README is a short overview — what the package does, a hero image and screenshots, a quick example, installation and a documentation table — and the full documentation moved to `docs/`: installation, plugin options, contextual help, the drawer and the help center, writing articles, settings, coverage, authorization, and upgrading. Every section and cross-reference from the old README is there, unchanged in substance. Links and images in the README are absolute so they also resolve on the Filament plugins site, and the screenshots are excluded from the Composer dist
+
+### Fixed
+
+- PHPStan's `instanceof.alwaysTrue` ignore for the content-source guard in `FinCodexServiceProvider` lives in `phpstan.neon` with `reportUnmatched: false` instead of inline. Larastan resolves the bound source to the decorator under Filament 5 and to the interface under Filament 4, so the inline ignore was reported as unmatched on one half of the matrix
+
 ## [0.5.2] - 2026-09-15
 
 ### Fixed

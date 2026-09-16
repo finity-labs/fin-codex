@@ -11,3 +11,11 @@ parameters:
         -
             identifier: trait.unused
             path: src/Help/WithHelp.php
+        # Larastan resolves make(ContentSource::class) to the bound DeclaredContextsSource on
+        # some dependency sets and to the interface on others, so the instanceof guard in
+        # forgetSourceMemoOnWrite() is "always true" under Filament ^5 and not under ^4.
+        # A host may rebind the source without the decorator, so the guard stays.
+        -
+            identifier: instanceof.alwaysTrue
+            path: src/FinCodexServiceProvider.php
+            reportUnmatched: false

@@ -155,7 +155,7 @@ class FinCodexServiceProvider extends PackageServiceProvider
                 $source = $this->app->make(ContentSource::class);
 
                 // A host may rebind the source without the decorator, so the check stays.
-                if ($source instanceof DeclaredContextsSource) { // @phpstan-ignore instanceof.alwaysTrue
+                if ($source instanceof DeclaredContextsSource) {
                     $source->forget();
                 }
             }
