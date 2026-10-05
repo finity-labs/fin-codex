@@ -37,5 +37,13 @@
         <env name="DB_DATABASE" value=":memory:"/>
         <env name="CACHE_DRIVER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
+        <!--
+            Testbench routes every deprecation through the Log facade while
+            testing, and Livewire 3.x raises one from its own test support on
+            PHP 8.2+. A Log::spy() or Context::spy() then crashes on that noise
+            before the test reaches its own assertions. Nothing reads the
+            deprecations channel in this suite, so it is switched off.
+        -->
+        <env name="LOG_DEPRECATIONS_WHILE_TESTING" value="false"/>
     </php>
 </phpunit>
