@@ -122,7 +122,7 @@ The install command lists the panels it found, asks which languages your help is
 
 | Package | Filament | Laravel | PHP | lin-codex |
 |---------|----------|---------|-----|-----------|
-| 0.x | 4.x / 5.x | 11, 12, 13 | 8.2+ | ^0.4.2 |
+| 0.x | 4.x / 5.x | 11, 12, 13 | 8.2+ | ^0.4.3 |
 
 AI translation needs PHP 8.3+, Laravel 12+ and [`laravel/ai`](https://github.com/laravel/ai) ^0.11.
 

@@ -68,6 +68,11 @@ it('scopes the list and the edit page through an overriding resource', function 
 
     Livewire::test(EditArticle::class, ['record' => $scoped->getRouteKey()])->assertOk();
 
+    // Livewire >= 4.4.6 hands ModelNotFoundException to Laravel's handler inside
+    // component tests (it becomes a 404 response); with handling disabled the
+    // mount exception stays observable on every supported Livewire.
+    $this->withoutExceptionHandling();
+
     expect(fn () => Livewire::test(EditArticle::class, ['record' => $other->getRouteKey()]))
         ->toThrow(ModelNotFoundException::class);
 });

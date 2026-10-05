@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-10-05
+
+### Fixed
+
+- Requires lin-codex 0.4.3. On Laravel 13, whose `config/cache.php` ships `'serializable_classes' => false`, lin-codex 0.4.2 and earlier cached PHP objects that the store handed back as `__PHP_Incomplete_Class`: opening the help drawer a second time on any article threw from `ArticleRenderer::render()`, the file source rescanned on every request, and the search over file articles found nothing. lin-codex 0.4.3 caches plain arrays and replaces the old entries as it reads them, so an upgrade needs no cache clear. fin-codex itself caches nothing; its notification helpers use `Context`
+
 ## [0.5.3] - 2026-09-16
 
 ### Changed
