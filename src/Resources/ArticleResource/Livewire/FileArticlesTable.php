@@ -33,8 +33,9 @@ use Livewire\Component;
  * `bootedInteractsWithTable()`, which runs before the `activeTab` update is
  * applied, so a table that switched between a query and `records()` would
  * still render the database rows on the request that switches the tab
- * (research Pitfall 3). Swapping the whole content component works, because
- * the schema is built during the render that follows the update.
+ * (research Pitfall 3). Showing this component in the table's place works,
+ * because the list page decides which of the two is visible as its schema
+ * renders, after the update.
  *
  * The rows are arrays, not models: Filament keys an array record by its
  * array key (`ArrayRecord::getKeyName()` is `__key`), so the slug is the

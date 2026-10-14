@@ -24,13 +24,17 @@ use FinityLabs\LinCodex\Data\ArticleData;
  * The article list, in two tabs: the database articles, and the ones that
  * still live only in a file.
  *
- * The second tab is a nested Livewire component swapped into `content()`
- * rather than a second mode of this page's own table. `ListRecords` builds
- * its table before the `activeTab` update is applied, so a table switching
- * between a query and `records()` would still show the database rows on the
- * request that switches the tab (research Pitfall 3); replacing the content
- * component happens during the render that follows the update, so the files
- * table is already there.
+ * The second tab is a nested Livewire component beside this page's own table
+ * in `content()` rather than a second mode of that table. `ListRecords`
+ * builds its table before the `activeTab` update is applied, so a table
+ * switching between a query and `records()` would still show the database
+ * rows on the request that switches the tab (research Pitfall 3). Which of
+ * the two is shown is decided by visibility closures, evaluated as the schema
+ * renders, not by building a different schema per tab: since Filament 4.15 /
+ * 5.10 a resource page resolves its record while hydrating every Livewire
+ * update, which reads the page's schemas through the magic getter and caches
+ * `content()` before the tab update lands, so a schema built around
+ * `$activeTab` would be the previous tab's on exactly that request.
  *
  * `ListRecords` declares `#[Url(as: 'tab')] public ?string $activeTab`, so
  * `?tab=files` deep-links to the second tab, and `getDefaultActiveTab()`
@@ -76,9 +80,9 @@ final class ListArticles extends ListRecords
     }
 
     /**
-     * Filament's own list content with the table swapped for the nested
-     * component on the files tab; the render hooks stay where hosts expect
-     * them.
+     * Filament's own list content with the nested component shown in the
+     * table's place on the files tab; the render hooks stay where hosts
+     * expect them.
      *
      * The warnings section goes above the tab strip and outside
      * getTabsContentComponent(): a source warning describes the whole source,
@@ -91,11 +95,18 @@ final class ListArticles extends ListRecords
             WarningsSection::make(),
             $this->getTabsContentComponent(),
             RenderHook::make(PanelsRenderHook::RESOURCE_PAGES_LIST_RECORDS_TABLE_BEFORE),
-            $this->activeTab === 'files'
-                ? Livewire::make(FileArticlesTable::class)->key('fin-codex-files-table')
-                : EmbeddedTable::make(),
+            EmbeddedTable::make()
+                ->hidden(fn (): bool => $this->isOnFilesTab()),
+            Livewire::make(FileArticlesTable::class)
+                ->key('fin-codex-files-table')
+                ->visible(fn (): bool => $this->isOnFilesTab()),
             RenderHook::make(PanelsRenderHook::RESOURCE_PAGES_LIST_RECORDS_TABLE_AFTER),
         ]);
+    }
+
+    private function isOnFilesTab(): bool
+    {
+        return $this->activeTab === 'files';
     }
 
     /**

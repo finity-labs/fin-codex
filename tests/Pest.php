@@ -22,6 +22,7 @@ use FinityLabs\LinCodex\Sources\FilesystemSource;
 use FinityLabs\LinCodex\View\PageHelpResolver;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Notifications\DatabaseNotification;
+use Illuminate\Support\Js;
 use Spatie\LaravelSettings\Models\SettingsProperty;
 
 uses(TestCase::class)->in(__DIR__);
@@ -206,6 +207,22 @@ function finCodexButtonTag(string $html, string $panel): string
     $close = (int) strpos($html, '>', $open);
 
     return substr($html, $open, $close - $open + 1);
+}
+
+/**
+ * Whether the page persists a collapsible section's state under a key built
+ * from the id fin-codex gave it. Filament's Section writes
+ * `$persist(...).as(`...`)` into the section's x-data and renames the key
+ * format now and then (4.15.2 / 5.10.2 went from `section-{id}-isCollapsed`
+ * to `filament:section:collapsed:{id}`), so only the two parts that are the
+ * plugin's own contract are read: the state is persisted, and the id is in
+ * the key, so one section's state never moves another's.
+ */
+function finCodexSectionPersistsCollapsedUnder(string $html, string $id): bool
+{
+    $pattern = '/\$persist\([^)]*\)\.as\(`[^`]*'.preg_quote((string) Js::from($id), '/').'[^`]*`\)/';
+
+    return preg_match($pattern, $html) === 1;
 }
 
 /**

@@ -4,6 +4,7 @@ use Filament\Actions\Action;
 use FinityLabs\FinCodex\Resources\ArticleResource\Pages\CreateArticle;
 use FinityLabs\FinCodex\Resources\ArticleResource\Pages\EditArticle;
 use FinityLabs\FinCodex\Resources\ArticleResource\RelationManagers\MediaRelationManager;
+use FinityLabs\FinCodex\Resources\ArticleResource\RelationManagers\RevisionsRelationManager;
 use FinityLabs\FinCodex\Tests\Fixtures\User;
 use FinityLabs\LinCodex\Models\Article;
 use FinityLabs\LinCodex\Models\ArticleTranslation;
@@ -12,6 +13,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
+use Livewire\Mechanisms\ComponentRegistry;
 
 /*
  * MEDIA-01, second half: the Media tab.
@@ -374,16 +376,13 @@ it('leaves the article other files alone', function (): void {
  * state between them.
  */
 
-/** The wire:click handler Filament renders for one relation-manager tab. */
-function finCodexMediaTabHandler(string $key): string
-{
-    return sprintf('wire:click="$set(\'activeRelationManager\', \'%s\')"', $key);
-}
-
 /**
- * The relation-manager tab strip only: from its container id to the end of
- * the nav, so a title found here is a TAB LABEL and not a word from the
- * rendered panel below it.
+ * The relation-manager tab strip only: from its container id to the first
+ * tab panel after it, so a title found here is a TAB LABEL and not a word
+ * from the rendered panel below it. The panel is the anchor because the
+ * strip's own wrapper has changed shape across Filament releases (a nav up to
+ * 4.15.1 / 5.10.1, nested divs since), while the panels have carried
+ * role="tabpanel" throughout.
  *
  * role="tablist" alone is no anchor — the form's own language tabs render one
  * on every edit and create page, so the count is 1 with no relation manager
@@ -397,9 +396,27 @@ function finCodexMediaTabStrip(string $html): string
         return '';
     }
 
-    $end = strpos($html, '</nav>', $start);
+    $end = strpos($html, 'role="tabpanel"', $start);
 
     return $end === false ? '' : substr($html, $start, $end - $start);
+}
+
+/**
+ * Whether the page mounts one relation manager: a nested Livewire component's
+ * own snapshot names it. Read from html() rather than through
+ * assertSeeLivewire(): after an update that assertion reads the raw JSON
+ * response, where the class name's backslashes are escaped once more than in
+ * the string it builds, so a nested component is never found there. The name
+ * is whatever the installed Livewire calls the class (a dotted kebab name on
+ * 3, the class itself on 4), resolved the way its own assertion does.
+ */
+function finCodexMediaMountsManager(string $html, string $class): bool
+{
+    $name = app()->bound('livewire.factory')
+        ? app('livewire.factory')->resolveComponentName($class)
+        : app(ComponentRegistry::class)->getName($class);
+
+    return str_contains($html, trim(htmlspecialchars((string) json_encode(['name' => $name])), '{}'));
 }
 
 it('shows a two-tab strip keyed revisions and media', function (): void {
@@ -414,12 +431,18 @@ it('shows a two-tab strip keyed revisions and media', function (): void {
     $page = Livewire::test(EditArticle::class, ['record' => $article->getRouteKey()]);
     $html = $page->html();
 
+    $strip = finCodexMediaTabStrip($html);
+
     // The two string keys are OUR contract: they are the ?relation= deep-link
-    // values and the wire:click payloads, so the literals are asserted.
+    // values and what a tab click sets activeRelationManager to, so the
+    // literals are asserted. The click handler itself is Filament's (a
+    // wire:click $set up to 4.15.1 / 5.10.1, an Alpine call since), so only
+    // the quoted key each button carries is read, not the handler around it.
     expect(array_keys($page->instance()->getCachedRelationManagers()))->toBe(['revisions', 'media'])
-        ->and(finCodexMediaTabStrip($html))->not->toBe('')
-        ->and(str_contains($html, finCodexMediaTabHandler('revisions')))->toBeTrue()
-        ->and(str_contains($html, finCodexMediaTabHandler('media')))->toBeTrue()
+        ->and($strip)->not->toBe('')
+        ->toContain("'revisions'")
+        ->toContain("'media'")
+        ->and(substr_count($strip, 'role="tab"'))->toBe(2)
         ->and(substr_count($html, 'role="tablist"'))->toBe(2);
 });
 
@@ -453,17 +476,18 @@ it('renders only the active tab panel', function (): void {
     $page = Livewire::test(EditArticle::class, ['record' => $article->getRouteKey()]);
     $page->assertSet('activeRelationManager', 'revisions');
 
-    // Same active-tab-only branch 05-06 and 05-07 pinned for the language
-    // tabs: the other tab is a button with no panel markup at all.
-    expect($page->html())
-        ->toContain('content.relationManagerTabs.revisions')
-        ->not->toContain('content.relationManagerTabs.media');
+    // Only the active tab's manager is mounted: the other is a button with
+    // nothing behind it, so the media table is neither queried nor rendered
+    // until its tab is opened. The panel markup is not read: up to 4.15.1 /
+    // 5.10.1 Filament left the inactive panel out, since 4.15.2 / 5.10.2 it
+    // renders an empty wrapper for it.
+    expect(finCodexMediaMountsManager($page->html(), RevisionsRelationManager::class))->toBeTrue()
+        ->and(finCodexMediaMountsManager($page->html(), MediaRelationManager::class))->toBeFalse();
 
     $page->set('activeRelationManager', 'media')->assertSet('activeRelationManager', 'media');
 
-    expect($page->html())
-        ->toContain('content.relationManagerTabs.media')
-        ->not->toContain('content.relationManagerTabs.revisions');
+    expect(finCodexMediaMountsManager($page->html(), MediaRelationManager::class))->toBeTrue()
+        ->and(finCodexMediaMountsManager($page->html(), RevisionsRelationManager::class))->toBeFalse();
 });
 
 it('renders the media manager bare when revisions are switched off', function (): void {

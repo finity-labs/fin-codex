@@ -4,7 +4,6 @@ use FinityLabs\FinCodex\Pages\HelpCenter;
 use FinityLabs\FinCodex\Tests\Fixtures\User;
 use FinityLabs\LinCodex\Models\Article;
 use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Support\Js;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 
@@ -69,25 +68,35 @@ function finCodexHelpSearchPage(?string $slug = null): Testable
 }
 
 /**
- * The tab key of the tab panel the page actually rendered, or null when it
- * rendered none.
+ * The tab key of the tab panel the page actually rendered content into, or
+ * null when no panel has any.
  *
- * Tabs bound to a Livewire property emit the panel of the active tab only
- * (Tab::toEmbeddedHtml returns an empty string for every other one, and for an
- * active tab whose schema is empty), so this is what the reader sees — unlike
- * the strip's buttons, which carry every tab's marker on every render.
+ * Only the active tab's schema is rendered; that is what the reader sees,
+ * unlike the strip's buttons, which carry every tab's marker on every render.
+ * How Filament marks the others has changed: up to 4.15.1 / 5.10.1 their
+ * panels were left out altogether (and so was an active tab whose schema was
+ * empty), since 4.15.2 / 5.10.2 every tab gets an empty role="tabpanel"
+ * wrapper. Walking the panels and asking which one has content answers the
+ * same question on both.
  */
 function finCodexHelpSearchRenderedTab(string $html): ?string
 {
-    return preg_match('/data-fin-codex-help-tab="([a-z]+)"[^>]*role="tabpanel"/', $html, $matches) === 1
-        ? $matches[1]
-        : null;
-}
+    if (trim($html) === '') {
+        return null;
+    }
 
-/** The Alpine persistence key Filament renders for one collapsible section id. */
-function finCodexHelpSearchPersistKey(string $id): string
-{
-    return 'section-${'.Js::from($id).' ?? $el.id}-isCollapsed';
+    $document = new DOMDocument;
+    $document->loadHTML($html, LIBXML_NOERROR | LIBXML_NOWARNING);
+
+    $panels = (new DOMXPath($document))->query('//*[@role="tabpanel"][@data-fin-codex-help-tab]');
+
+    foreach ($panels === false ? [] : $panels as $panel) {
+        if ($panel instanceof DOMElement && trim($panel->textContent) !== '') {
+            return $panel->getAttribute('data-fin-codex-help-tab');
+        }
+    }
+
+    return null;
 }
 
 /*
@@ -128,7 +137,7 @@ it('folds the whole rail away and remembers that, so a narrow screen can put the
     // it once.
     expect($html)->toContain('id="fin-codex-help-rail"')
         ->toContain('aria-controls="fin-codex-help-rail-content"')
-        ->toContain(finCodexHelpSearchPersistKey('fin-codex-help-rail'));
+        ->and(finCodexSectionPersistsCollapsedUnder($html, 'fin-codex-help-rail'))->toBeTrue();
 });
 
 it('keeps the typed query in the browser session so a hit can be opened and left', function (): void {
@@ -288,7 +297,7 @@ it('never reaches the searcher below the minimum length', function (): void {
     $key = 'codex-search:user:'.$user->getKey();
 
     // Even with the tab forced over, one character costs the reader nothing and
-    // renders no panel at all.
+    // renders nothing into any panel.
     $page = finCodexHelpSearchPage()->set('query', 'r')->set('tab', 'search');
 
     expect(RateLimiter::attempts($key))->toBe(0)

@@ -3,7 +3,6 @@
 use FinityLabs\FinCodex\Pages\HelpCenter;
 use FinityLabs\FinCodex\Tests\Fixtures\User;
 use FinityLabs\LinCodex\Models\Article;
-use Illuminate\Support\Js;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 
@@ -147,12 +146,6 @@ function finCodexHelpTreeEntry(string $html, string $slug): string
     return substr($html, $open, (int) strpos($html, '>', $marker) - $open + 1);
 }
 
-/** The Alpine persistence key Filament renders for one collapsible section id. */
-function finCodexHelpTreePersistKey(string $id): string
-{
-    return 'section-${'.Js::from($id).' ?? $el.id}-isCollapsed';
-}
-
 /*
  * -----------------------------------------------------------------------
  * The whole tree.
@@ -228,10 +221,8 @@ it('derives each group\'s persistence key from its slug and nothing else', funct
 
     // Per section, so one group's state never moves another's, and stable
     // across the re-mount every article link causes.
-    expect(finCodexHelpTreeSection($html, 'guides'))
-        ->toContain(finCodexHelpTreePersistKey('fin-codex-help-guides'))
-        ->and(finCodexHelpTreeSection($html, 'guides/advanced'))
-        ->toContain(finCodexHelpTreePersistKey('fin-codex-help-guides-advanced'));
+    expect(finCodexSectionPersistsCollapsedUnder(finCodexHelpTreeSection($html, 'guides'), 'fin-codex-help-guides'))->toBeTrue()
+        ->and(finCodexSectionPersistsCollapsedUnder(finCodexHelpTreeSection($html, 'guides/advanced'), 'fin-codex-help-guides-advanced'))->toBeTrue();
 });
 
 it('opens the top level on a first visit and leaves deeper groups closed', function (): void {
@@ -291,8 +282,7 @@ it('renders an article that has children as a collapsible section headed by its 
     $html = finCodexHelpTreePage('guides/deep')->html();
     $header = finCodexHelpTreeHeader($html, 'account');
 
-    expect(finCodexHelpTreeSection($html, 'account'))
-        ->toContain(finCodexHelpTreePersistKey('fin-codex-help-account'))
+    expect(finCodexSectionPersistsCollapsedUnder(finCodexHelpTreeSection($html, 'account'), 'fin-codex-help-account'))->toBeTrue()
         // The heading IS the link: the label opens the article, and the chevron
         // beside it is a real disclosure button for the children.
         ->and($header)->toContain('href="'.$url.'"')

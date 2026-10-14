@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.6] - 2026-10-14
+
+### Fixed
+
+- The Files tab of the article list switches to the file table on the click again on Filament 4.15 and 5.10. Since those releases a resource page resolves its record while hydrating every Livewire update, which builds and caches the page's content schema before the tab update is applied, so a schema built around the active tab showed the previous tab's table on exactly the request that switched it. The list page now keeps both the table and the nested file component in its schema and decides which one is visible as the schema renders.
+- The test suite no longer asserts Filament's private markup for collapsible sections and tab strips, which Filament 4.15.2 and 5.10.2 changed (the section persistence key format, the tab strip's wrapper element, and empty wrappers for inactive tab panels). It reads the ids fin-codex sets, which tab panel has content and which relation manager is mounted instead, so the same assertions hold from Filament 4.12.6 up.
+
 ## [0.5.5] - 2026-10-06
 
 ### Changed

@@ -1,5 +1,6 @@
 <?php
 
+use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Filament\Pages\Dashboard;
 use Filament\Schemas\Components\Component;
@@ -371,6 +372,28 @@ it('attaches the screen to an article the admin already has, and the row goes gr
 
     expect($row['covered'])->toBeTrue()
         ->and($row['slug'])->toBe('handbook');
+});
+
+it('opens the article picker from inside the attach modal', function (): void {
+    finCodexActionsUser();
+    finCodexActionsArticle('handbook');
+    forgetHelpMemo();
+
+    $key = finCodexActionsRowKey('admin', UserResource::class);
+
+    // The coverage table is array-backed, so the attach modal's schema carries
+    // the row as a plain array. Mounting Select... embeds the picker's Livewire
+    // component, whose record property is ?Model — forwarding the array there
+    // was a TypeError the moment either select button was clicked.
+    finCodexActionsPage()
+        ->mountAction([
+            TestAction::make('attach')->table($key),
+            TestAction::make('select')->schemaComponent('article'),
+        ])
+        ->assertActionMounted([
+            TestAction::make('attach')->table($key),
+            TestAction::make('select')->schemaComponent('article'),
+        ]);
 });
 
 it('takes both gap actions away once the row is covered, so nobody attaches twice', function (): void {
